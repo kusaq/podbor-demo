@@ -298,7 +298,8 @@ function say(msg) { clearTimeout(toastT); set({ toast: msg }); toastT = setTimeo
 function go(screen, extra) { set(Object.assign({ stack: S.stack.concat([S.screen]), screen: screen }, extra || {})); }
 function tab(screen) { set({ screen: screen, stack: [] }); }
 function back() { var st = S.stack.slice(); var prev = st.pop() || 'list'; set({ stack: st, screen: prev }); }
-function isWide() { return window.innerWidth >= 1000; }
+var DESKTOP = /[?&]layout=desktop\b/.test(location.search);
+function isWide() { return DESKTOP && window.innerWidth >= 1000; }
 
 /* ---------- производные ---------- */
 function res(id) { return S.callRes[id]; }
