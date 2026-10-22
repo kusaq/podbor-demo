@@ -12,7 +12,14 @@
 html,body{margin:0;height:100%}
 body{background:#E9EAEE;font-family:'Onest',system-ui,-apple-system,sans-serif;-webkit-tap-highlight-color:transparent}
 #app{width:100%;max-width:430px;height:100dvh;margin:0 auto;background:#F4F4F6;color:#111214;font-size:15px;line-height:1.4;font-variant-numeric:tabular-nums;display:flex;flex-direction:column;overflow:hidden;position:relative}
-@media (min-width:700px){body{display:flex;align-items:center;justify-content:center;min-height:100vh}#app{height:844px;max-width:390px;border-radius:36px;box-shadow:0 30px 80px rgba(17,18,20,.18)}}
+@media (min-width:700px){body{display:flex;align-items:center;justify-content:center;min-height:100vh}#app{height:min(844px,calc(100vh - 40px));max-width:390px;border-radius:36px;box-shadow:0 30px 80px rgba(17,18,20,.18)}}
+#app.wide{max-width:none;width:100vw;height:100vh;border-radius:0;box-shadow:none;flex-direction:row;background:#F4F4F6}
+.pane{display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;position:relative}
+.pane.left{width:400px;flex:none;background:#F4F4F6;box-shadow:1px 0 0 rgba(17,18,20,.06)}
+.pane.right{flex:1;background:#EEEFF2}
+.pane.right .scroll,.pane.right .dock-wrap{width:100%;max-width:760px;margin:0 auto}
+.pane.right .top{width:100%;max-width:760px;margin:0 auto}
+.empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#6B6F76}
 button,input,textarea{font-family:inherit}
 .top{flex:none;display:flex;align-items:center;gap:10px;padding:calc(14px + env(safe-area-inset-top)) 16px 10px;min-height:66px}
 .top-t{flex:1;min-width:0}
@@ -22,12 +29,14 @@ button,input,textarea{font-family:inherit}
 .scroll{flex:1;overflow-y:auto;padding:6px 16px 28px;display:flex;flex-direction:column;gap:12px;-webkit-overflow-scrolling:touch}
 .card{background:#fff;border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:12px}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;padding:0 18px;border-radius:16px;border:0;font-size:15px;font-weight:600;cursor:pointer;width:100%;text-decoration:none;flex:none;color:#111214;background:#EEF0F3}
+.btn.white{background:#fff}
 .b-pri{background:#111214;color:#fff}
 .b-acc{background:#2B59FF;color:#fff}
 .b-off{background:#E4E5E9;color:#7A7E86}
 .b-ghost{background:none;color:#6B6F76;min-height:44px}
 .b-sm{min-height:44px;font-size:14px;width:auto;padding:0 14px;border-radius:14px}
-.chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;line-height:1.35}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;line-height:1.35;border:0}
+button.chip{cursor:pointer;font-family:inherit}
 .lbl{font-size:13px;font-weight:500;color:#6B6F76;margin:0}
 .muted{color:#6B6F76;font-size:13px;margin:0}
 .row{display:flex;align-items:center;gap:8px}
@@ -35,6 +44,7 @@ button,input,textarea{font-family:inherit}
 .wrap{display:flex;flex-wrap:wrap;gap:6px}
 .g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 .i{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .i-s{width:16px;height:16px}
 .i-l{width:30px;height:30px;stroke-width:1.5}
@@ -42,10 +52,13 @@ button,input,textarea{font-family:inherit}
 .tab{display:flex;flex-direction:column;align-items:center;gap:3px;min-height:52px;justify-content:center;border:0;background:none;font-size:11px;font-weight:600;cursor:pointer;color:#6B6F76}
 .tab.on{color:#2B59FF}
 .sec-h{display:flex;align-items:baseline;gap:8px;padding:8px 4px 0}
-.sec-h h2{margin:0;font-size:17px;font-weight:700;flex:1;letter-spacing:-.01em}
+.sec-h h2{margin:0;font-size:17px;font-weight:700;flex:1;letter-spacing:-.01em;text-align:left}
+.sec-btn{border:0;background:none;width:100%;cursor:pointer;align-items:center;padding:8px 4px 2px;color:inherit;font-family:inherit}
+.sec-btn .chev{transition:transform .2s;color:#9A9EA5}
+.sec-btn.closed .chev{transform:rotate(-90deg)}
 .cand{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:#fff;border:0;border-radius:20px;padding:12px;font-size:15px;color:inherit;cursor:pointer}
 .cand-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-.thumb{width:64px;height:56px;border-radius:14px;background:#EEF0F3;color:#9A9EA5;display:flex;align-items:center;justify-content:center;flex:none}
+.thumb{width:56px;height:52px;border-radius:14px;background:#EEF0F3;color:#9A9EA5;display:flex;align-items:center;justify-content:center;flex:none}
 .ct{font-weight:600;font-size:15px}
 .cm{font-size:13px;color:#6B6F76}
 .price{font-weight:600;font-size:15px}
@@ -53,15 +66,16 @@ button,input,textarea{font-family:inherit}
 .field label{font-size:13px;font-weight:500;color:#6B6F76}
 .inp{min-height:52px;border:0;border-radius:14px;padding:0 16px;font-size:16px;background:#F1F2F4;color:#111214;width:100%;outline-color:#2B59FF}
 textarea.inp{padding:14px 16px;min-height:120px;resize:none;line-height:1.45}
+.inp.big{font-size:24px;font-weight:700;min-height:60px}
 .kv{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 12px;font-size:14px;margin:0;align-items:center}
 .kv dt{color:#6B6F76}
 .kv dd{margin:0;text-align:right;font-weight:600}
 .seg{display:flex;background:#EEF0F3;border-radius:14px;padding:4px;gap:4px}
 .seg button{flex:1;min-height:40px;border:0;border-radius:11px;font-size:13px;font-weight:600;cursor:pointer;background:transparent;color:#4A4E55}
 .seg button.on{background:#fff;color:#111214;box-shadow:0 1px 3px rgba(17,18,20,.10)}
-.toast{position:absolute;left:16px;right:16px;bottom:90px;background:#111214;color:#fff;border-radius:16px;padding:13px 16px;font-size:14px;display:flex;gap:10px;align-items:center;box-shadow:0 12px 30px rgba(17,18,20,.22);z-index:5;animation:tin .2s ease}
+.toast{position:absolute;left:16px;right:16px;bottom:90px;max-width:420px;margin:0 auto;background:#111214;color:#fff;border-radius:16px;padding:13px 16px;font-size:14px;display:flex;gap:10px;align-items:center;box-shadow:0 12px 30px rgba(17,18,20,.22);z-index:20;animation:tin .2s ease}
 @keyframes tin{from{opacity:0;transform:translateY(8px)}}
-.banner{border-radius:18px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start;font-size:14px;line-height:1.4;border:0;text-align:left;width:100%;color:inherit}
+.banner{border-radius:18px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start;font-size:14px;line-height:1.4;border:0;text-align:left;width:100%;color:inherit;font-family:inherit}
 .banner p{margin:2px 0 0;opacity:.85}
 .pills{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;flex:none;scrollbar-width:none}
 .pill{flex:none;min-height:40px;padding:0 16px;border-radius:999px;border:0;background:#fff;font-size:13px;font-weight:600;cursor:pointer;color:#111214}
@@ -74,7 +88,7 @@ textarea.inp{padding:14px 16px;min-height:120px;resize:none;line-height:1.45}
 .diff{display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.35}
 .diff span{color:#111214}
 .mask{background:#111214;color:#fff;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:600}
-.hit{background:#FDECEC;color:#B3261E;border-radius:5px;padding:0 4px;font-weight:600}
+.rm{background:#E4E5E9;color:#6B6F76;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:600}
 .step{display:flex;align-items:center;gap:6px}
 .step button{width:40px;height:40px;border-radius:12px;border:0;background:#EEF0F3;font-size:18px;font-weight:600;cursor:pointer;color:#111214}
 .otp{position:relative;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
@@ -91,7 +105,47 @@ textarea.inp{padding:14px 16px;min-height:120px;resize:none;line-height:1.45}
 .switch span{width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .radio{width:20px;height:20px;border-radius:50%;border:2px solid #C4C7CD;flex:none}
 .radio.on{border:6px solid #2B59FF}
+.vcard{background:#fff;border-radius:20px;overflow:hidden}
+.vcard.picked{box-shadow:inset 0 0 0 2px #2B59FF}
+.vrow{display:flex;align-items:stretch}
+.ck{width:52px;flex:none;border:0;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.ck span{width:24px;height:24px;border-radius:8px;box-shadow:inset 0 0 0 2px #C4C7CD;display:flex;align-items:center;justify-content:center;color:#fff}
+.ck.on span{background:#2B59FF;box-shadow:none}
+.vmain{flex:1;min-width:0;border:0;background:none;text-align:left;padding:12px 14px 12px 0;cursor:pointer;color:inherit;display:flex;flex-direction:column;gap:3px;font-family:inherit;font-size:15px}
+.vexp{padding:0 16px 16px 52px;display:flex;flex-direction:column;gap:10px}
+.dock{flex:none;background:#fff;padding:12px 16px calc(12px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:12px;box-shadow:0 -1px 0 rgba(17,18,20,.06)}
+.bar{position:relative;height:8px;border-radius:4px;background:#EEF0F3;margin:14px 0 22px}
+.bar .rng{position:absolute;top:0;bottom:0;border-radius:4px;background:#D6E0FF}
+.bar .mk{position:absolute;top:-5px;width:2px;height:18px;border-radius:1px}
+.bar .mk em{position:absolute;top:20px;transform:translateX(-50%);font-style:normal;font-size:11px;font-weight:600;white-space:nowrap}
+.paper{background:#fff;border-radius:6px;box-shadow:0 8px 24px rgba(17,18,20,.10);padding:22px 20px;font-size:12px;line-height:1.45;color:#111214}
+.paper h3{margin:0;font-size:17px}
 .sr{position:absolute;left:-9999px}
+/* компактность и состояния */
+.top{min-height:58px;padding-bottom:8px}
+.top h1{font-size:19px}
+.scroll{gap:10px;padding:4px 16px 24px}
+.scroll>*{flex-shrink:0}
+.card{padding:14px;gap:10px;border-radius:18px}
+.btn{min-height:48px;transition:transform .12s ease,filter .15s ease,background-color .15s ease}
+.btn:active,.cand:active,.pill:active,.ib:active,.tab:active,.li:active,.ck:active,.vmain:active{transform:scale(.98)}
+@media (hover:hover){.btn:hover,.pill:hover,.ib:hover{filter:brightness(.96)}.li:hover,.cand:hover{background:#FAFAFB}}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #2B59FF;outline-offset:2px}
+[aria-disabled="true"]{cursor:not-allowed}
+.group{background:#fff;border-radius:18px;overflow:hidden;display:flex;flex-direction:column}
+.group>*+*{box-shadow:inset 0 1px 0 #F0F1F3}
+.li{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:#fff;border:0;padding:12px 16px;font-family:inherit;font-size:15px;color:inherit;cursor:pointer;transition:background-color .15s ease}
+.li.active{background:#F4F6FF}
+.note{display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.4;padding:10px 12px;border-radius:12px}
+.note b{font-weight:600}
+.jumpbar{position:sticky;top:-4px;z-index:2;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;background:#EEF0F3;padding:4px;border-radius:14px;margin:0 -2px}
+.jumpbar button{border:0;background:transparent;border-radius:11px;min-height:44px;font-family:inherit;font-size:12px;font-weight:600;color:#4A4E55;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;line-height:1.2}
+.jumpbar button b{font-size:15px;color:#111214}
+.jumpbar button.hot{background:#2B59FF;color:#fff}
+.jumpbar button.hot b{color:#fff}
+.pane.right .jumpbar{top:0}
+.cap{font-size:12px;color:#6B6F76;margin-top:-4px;padding:0 4px}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
@@ -102,8 +156,7 @@ textarea.inp{padding:14px 16px;min-height:120px;resize:none;line-height:1.45}
 
 /* ---------- иконки ---------- */
 var P = {
-  back: '<path d="m15 18-6-6 6-6"/>',
-  next: '<path d="m9 18 6-6-6-6"/>',
+  back: '<path d="m15 18-6-6 6-6"/>', next: '<path d="m9 18 6-6-6-6"/>', down: '<path d="m6 9 6 6 6-6"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   out: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
   car: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
@@ -117,24 +170,28 @@ var P = {
   box: '<path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
   send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
   phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
-  check: '<path d="M20 6 9 17l-5-5"/>',
-  x: '<path d="M18 6 6 18M6 6l12 12"/>',
-  warn: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',
-  dash: '<path d="M5 12h14"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>', x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  warn: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>', dash: '<path d="M5 12h14"/>',
   img: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   undo: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
   list: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9h10M7 13h6"/>',
-  msg: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  users: '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M17 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/>',
   sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
-  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>', file: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
+  download: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>', star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z"/>',
+  chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>', key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6Z"/>'
 };
 function ic(name, cls, style) {
   return '<svg class="i ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true"' + (style ? ' style="' + style + '"' : '') + '>' + P[name] + '</svg>';
 }
 function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-function rub(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ₽'; }
+function num(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+function rub(n) { return num(n) + ' ₽'; }
+function pct(x) { return (Math.abs(x) < 0.05 ? '0' : Math.abs(x).toFixed(1).replace('.', ',').replace(',0', '')) + '%'; }
 function days(n) {
   var a = n % 10, b = n % 100;
   return n + ' ' + ((a === 1 && b !== 11) ? 'день' : (a >= 2 && a <= 4 && (b < 12 || b > 14)) ? 'дня' : 'дней');
@@ -146,31 +203,34 @@ var TONE = {
   bad: 'background:#FDECEC;color:#B3261E', info: 'background:#EAF0FF;color:#2347D6', muted: 'background:#EEF0F3;color:#4A4E55'
 };
 var DIFF = { ok: ['check', '#0B6B43'], warn: ['warn', '#8A4B00'], bad: ['x', '#B3261E'], info: ['dash', '#6B6F76'] };
+var MARKET = { median: 3080000, lo: 2650000, hi: 3450000, n: 38, period: '30 дней' };
+var BUDGET = 3200000;
 var CANDS = [
-  { id: 's1', kind: 'stock', src: 'Склад', car: 'Camry 2.5 Luxe, 2022', meta: '41 200 км · белый перламутр', total: 3150000, score: 96, term: 'сразу', photos: 16,
+  { id: 's1', kind: 'stock', src: 'Склад', car: 'Camry 2.5 Luxe, 2022', meta: '41 200 км, белый перламутр', total: 3150000, score: 96, term: 'сразу', photos: 16,
     diffs: [['ok', 'Поколение XV70 рестайлинг'], ['ok', 'Год 2022'], ['ok', 'Пробег 41 тыс. км'], ['ok', 'Белый'], ['info', 'Luxe вместо Prestige'], ['ok', 'На 1,6% дешевле бюджета']] },
-  { id: 'p7', kind: 'import', sup: 1, src: 'П-07 Япония', car: 'Camry 2.5 G, 2022', meta: '29 000 км · белый · оценка 4.5', total: 2870000, score: 93, term: 'от 45 до 60 дней', photos: 14, wm: true,
+  { id: 'p7', kind: 'import', sup: 1, src: 'П-07 Япония', car: 'Camry 2.5 G, 2022', meta: '29 000 км, белый, оценка 4.5', total: 2870000, score: 93, term: 'от 45 до 60 дней', photos: 14, wm: true,
     diffs: [['ok', 'Поколение XV70 рестайлинг'], ['ok', 'Год 2022'], ['ok', 'Пробег 29 тыс. км'], ['ok', 'Белый'], ['warn', 'Комплектация G проще Prestige'], ['ok', 'На 10% дешевле бюджета'], ['warn', 'Под заказ от 45 до 60 дней']],
     calc: [['Аукцион', '¥ 2 150 000'], ['Курс ЦБ плюс 2%', '0,5724 ₽'], ['В рублях', 1230660], ['Фрахт до Владивостока', 165000], ['Пошлина', 698340], ['Утильсбор', 528000], ['Брокер и ЭПТС', 148000], ['Комиссия', 100000]] },
-  { id: 'p3', kind: 'import', sup: 2, src: 'П-03 ОАЭ', car: 'Camry 2.5 Grande, 2023', meta: '18 000 км · серебристый', total: 3240000, score: 90, term: 'от 30 до 40 дней', photos: 11,
+  { id: 'p3', kind: 'import', sup: 2, src: 'П-03 ОАЭ', car: 'Camry 2.5 Grande, 2023', meta: '18 000 км, серебристый', total: 3240000, score: 90, term: 'от 30 до 40 дней', photos: 11,
     diffs: [['ok', 'Поколение XV70 рестайлинг'], ['ok', 'Год 2023'], ['ok', 'Пробег 18 тыс. км'], ['info', 'Серебристый вместо белого'], ['warn', 'На 1,3% дороже бюджета'], ['warn', 'Под заказ от 30 до 40 дней']],
     calc: [['Цена продавца', '$ 18 900'], ['Курс ЦБ плюс 2%', '98,33 ₽'], ['В рублях', 1858437], ['Доставка до Новороссийска', 210000], ['Пошлина', 395563], ['Утильсбор', 528000], ['Брокер и ЭПТС', 148000], ['Комиссия', 100000]] },
-  { id: 'm1', kind: 'rf', src: 'Авито · Москва', car: 'Camry 2.5 Prestige, 2021', meta: '55 000 км · серый', total: 2990000, score: 88, term: 'нужен звонок', photos: 9,
+  { id: 'm1', kind: 'rf', src: 'Авито · Москва', car: 'Camry 2.5 Prestige, 2021', meta: '55 000 км, серый', total: 2990000, score: 88, term: 'нужен звонок', photos: 9,
     diffs: [['ok', 'Поколение XV70 рестайлинг'], ['ok', 'Год 2021'], ['warn', 'Пробег 55 тыс. км, у границы'], ['info', 'Серый вместо белого'], ['ok', 'Prestige'], ['ok', 'На 6,6% дешевле бюджета']] },
-  { id: 'm2', kind: 'rf', src: 'Авто.ру · Казань', car: 'Camry 2.5 Exclusive, 2023', meta: '21 000 км · белый', total: 3380000, score: 84, term: 'нужен звонок', photos: 12,
+  { id: 'm2', kind: 'rf', src: 'Авто.ру · Казань', car: 'Camry 2.5 Exclusive, 2023', meta: '21 000 км, белый', total: 3380000, score: 84, term: 'нужен звонок', photos: 12,
     diffs: [['ok', 'Поколение XV70 рестайлинг'], ['ok', 'Год 2023'], ['ok', 'Пробег 21 тыс. км'], ['ok', 'Белый'], ['warn', 'На 5,6% дороже бюджета'], ['info', 'Доставка из Казани']] },
-  { id: 'm3', kind: 'rf', src: 'Дром · Петербург', car: 'Camry 2.5, 2020', meta: '63 000 км · белый', total: 2650000, score: 0, term: 'нужен звонок', photos: 7,
+  { id: 'm3', kind: 'rf', src: 'Дром · Петербург', car: 'Camry 2.5, 2020', meta: '63 000 км, белый', total: 2650000, score: 0, term: 'нужен звонок', photos: 7,
     diffs: [['warn', 'Поколение уточнить'], ['bad', 'Пробег 63 тыс. км, выше запроса'], ['ok', 'Белый'], ['ok', 'На 17% дешевле бюджета']] }
 ];
 var BY = {}; CANDS.forEach(function (c) { BY[c.id] = c; });
 var CALL_IDS = ['m1', 'm2', 'm3'];
 var REQS = [
-  { title: 'Toyota Camry', sub: 'с 2021 по 2023 · до 60 тыс. км', client: 'Алексей М.', mgr: 'Марина К.', when: '10:12', live: true, f: 'work' },
-  { title: 'Kia Sorento', sub: 'с 2022 · до 40 тыс. км', client: 'Ирина К.', mgr: 'Олег С.', when: 'вчера', status: 'готово', tone: 'good', f: 'work' },
-  { title: 'BMW X5', sub: 'с 2020 по 2022 · до 80 тыс. км', client: 'ООО «Вектор»', mgr: 'Марина К.', when: '13 окт', status: 'ждём клиента', tone: 'warn', f: 'client' },
-  { title: 'Hyundai Palisade', sub: 'с 2021 · до 70 тыс. км', client: 'Тимур Б.', mgr: 'Артём Л.', when: '12 окт', status: 'обзвон', tone: 'info', f: 'work' },
-  { title: 'Mercedes GLE', sub: 'с 2020 по 2021 · до 50 тыс. км', client: 'Павел Р.', mgr: 'Олег С.', when: '9 окт', status: 'отказ', tone: 'muted', f: 'closed' }
+  { key: 'camry', title: 'Toyota Camry', sub: 'с 2021 по 2023, до 60 тыс. км', mgr: 'Марина К.', when: '10:12', live: true },
+  { key: 'sorento', title: 'Kia Sorento', sub: 'с 2022, до 40 тыс. км', mgr: 'Олег С.', when: 'вчера', search: ['готово', 'good'] },
+  { key: 'bmw', title: 'BMW X5', sub: 'с 2020 по 2022, до 80 тыс. км', mgr: 'Марина К.', when: '13 окт', search: ['отправлено', 'muted'] },
+  { key: 'palisade', title: 'Hyundai Palisade', sub: 'с 2021, до 70 тыс. км', mgr: 'Артём Л.', when: '12 окт', search: ['обзвон', 'info'] },
+  { key: 'gle', title: 'Mercedes GLE', sub: 'с 2020 по 2021, до 50 тыс. км', mgr: 'Олег С.', when: '9 окт', search: ['закрыт', 'muted'] }
 ];
+var CST = { search: ['Ищем тачку', 'info'], think: ['Думает', 'warn'], lost: ['Слился', 'bad'], won: ['Заказал', 'good'] };
 var SUPS = [
   { code: 'П-07', geo: 'Япония', cid: 'p7', order: 1 },
   { code: 'П-03', geo: 'ОАЭ', cid: 'p3', order: 2 },
@@ -189,24 +249,46 @@ var MM = [
 ];
 var RES = { ok: ['правда', 'good'], soft: ['допустимо', 'warn'], hard: ['не подходит', 'bad'], fake: ['фейк', 'bad'] };
 var META = {
-  newreq: ['Новый запрос', ''], supcheck: ['Проверка запроса', ''], card: ['Toyota Camry', 'Алексей М. · сегодня 10:12'],
-  compare: ['Сравнение', 'Toyota Camry'], calls: ['Обзвон', 'Toyota Camry'], reply: ['Ответ П-07', 'Япония'],
-  client: ['Текст клиенту', 'Алексей М.'], feedback: ['Клиенты', ''], more: ['Профиль', ''], settings: ['Настройки', ''], supplier: ['Бот подбора', 'Telegram']
+  lead: ['Новый лид', ''], newreq: ['Новый запрос', 'Алексей Морозов'], supcheck: ['Запрос поставщикам', ''], card: ['Toyota Camry', ''],
+  calls: ['Обзвон', 'Toyota Camry'], reply: ['Ответ П-07', 'Япония'], client: ['Предложение', 'Алексей Морозов'], status: ['Статус клиента', ''],
+  feedback: ['Клиенты', ''], approve: ['Подтверждение цен', ''], more: ['Профиль', ''], settings: ['Настройки', ''], supplier: ['Бот подбора', 'Telegram']
 };
 
 /* ---------- состояние ---------- */
 var S = {
   screen: 'login', stack: [], role: 'manager', loginStep: 0, remember: true,
   login: 'm.kravets', password: 'demo-pass', code: '',
-  dictation: 'Камри семидесятая рестайлинг, двадцать первый или двадцать третий год, белая, можно серую, пробег до шестидесяти тысяч, бюджет три двести под ключ. Клиент Алексей Морозов, плюс семь девятьсот шестнадцать двести четыре восемнадцать сорок один',
-  recording: false, parsed: false, trim: '', cleaned: false,
+  leadMode: 'quick', leadText: 'Здравствуйте! Меня зовут Алексей, ищу камри 70 в рестайлинге, белую или серую, бюджет до 3,2 под ключ. Мой номер +7 916 204 18 41, лучше в WhatsApp',
+  leadParsed: false, anketa: false, legal: 'person', pay: 'cash', fName: '', fPhone: '',
+  dictation: 'Камри семидесятая рестайлинг, двадцать первый или двадцать третий год, белая, можно серую, пробег до шестидесяти тысяч, бюджет три двести под ключ',
+  recording: false, parsed: false, trim: '',
   supArrived: 2, stockOn: true, marketOn: true,
-  sel: 'p7', inClient: { s1: true, p7: true, p3: true }, sent: false, listFilter: 'all',
-  fb: '', reason: '', ordered: false,
+  sel: 'p7', picked: {}, open: {}, detail: false, fold: { stock: false, sup: false, market: true },
+  prices: {}, sendMode: 'text', sent: false, kpVer: 0, listFilter: 'all',
+  cls: {
+    camry: { name: 'Алексей Морозов', car: 'Toyota Camry', status: 'search', reasons: [], main: '', note: '' },
+    sorento: { name: 'Ирина К.', car: 'Kia Sorento', status: 'search', reasons: [], main: '', note: '' },
+    bmw: { name: 'ООО «Вектор»', car: 'BMW X5', status: 'think', reasons: [], main: '', note: '', days: 6 },
+    palisade: { name: 'Тимур Б.', car: 'Hyundai Palisade', status: 'search', reasons: [], main: '', note: '' },
+    gle: { name: 'Павел Р.', car: 'Mercedes GLE', status: 'lost', reasons: ['Дорого', 'Долго ждать'], main: 'Дорого', note: '' }
+  },
+  stKey: 'camry', draft: null, clFilter: 'all',
   stab: 'tol', genPolicy: 'same', priceMode: 'ceil', rateRule: 'pct', visibility: 'platform',
-  t: { sup: 2, alarm: 6, client: 2, fresh: 90 }, excluding: '', excluded: [],
+  t: { sup: 2, alarm: 6, client: 2, lost: 5, fresh: 90 }, rule: { median: 5, margin: 3 }, kpDays: 7, statShare: false,
+  groups: [
+    ['Цена', ['Дорого', 'Нашёл дешевле']], ['Сроки', ['Долго ждать']],
+    ['Автомобиль', ['Не та комплектация', 'Не тот цвет', 'Не понравилось состояние']],
+    ['Деньги', ['Не одобрили кредит', 'Нет нужной суммы']], ['Условия', ['Не устроила предоплата']],
+    ['Клиент', ['Передумал', 'Купил в другом месте', 'Не выходит на связь', 'Другое']]
+  ],
+  newReason: '', excluding: '', excluded: [],
   supStep: 0, toast: '',
-  callIdx: 0, callRes: {}, hist: [], mm: '', mmFields: [], fixVals: {}, callNote: ''
+  callIdx: 0, callRes: {}, hist: [], mm: '', mmFields: [], fixVals: {}, callNote: '',
+  log: [
+    ['Запрос поставщикам', 'удалено', 'info', 'Телефон клиента', '16 октября, 11:02'],
+    ['Текст клиенту', 'удалено', 'info', 'WeChat поставщика', '14 октября, 17:45'],
+    ['Цена клиенту', 'подтверждено', 'good', 'Kia Sorento, ниже медианы на 6%', '12 октября, 15:20']
+  ]
 };
 var app = document.getElementById('app');
 var timers = [], toastT = null;
@@ -216,6 +298,7 @@ function say(msg) { clearTimeout(toastT); set({ toast: msg }); toastT = setTimeo
 function go(screen, extra) { set(Object.assign({ stack: S.stack.concat([S.screen]), screen: screen }, extra || {})); }
 function tab(screen) { set({ screen: screen, stack: [] }); }
 function back() { var st = S.stack.slice(); var prev = st.pop() || 'list'; set({ stack: st, screen: prev }); }
+function isWide() { return window.innerWidth >= 1000; }
 
 /* ---------- производные ---------- */
 function res(id) { return S.callRes[id]; }
@@ -223,6 +306,7 @@ function dropped(c) { var r = res(c.id); return !!r && (r.r === 'hard' || r.r ==
 function answered(c) { return !c.sup || c.sup <= S.supArrived; }
 function scoreTxt(c) { return c.score ? c.score + '%' : 'уточнить'; }
 function scoreSt(c) { return c.score >= 90 ? TONE.good : c.score ? TONE.warn : TONE.muted; }
+function chip(t, st) { return '<span class="chip" style="' + st + '">' + esc(t) + '</span>'; }
 function tag(c) { var r = res(c.id); return r ? chip(RES[r.r][0], TONE[RES[r.r][1]]) : chip(scoreTxt(c), scoreSt(c)); }
 function diffsOf(c) {
   var d = c.diffs.slice(), r = res(c.id);
@@ -231,18 +315,58 @@ function diffsOf(c) {
   return d;
 }
 function visible() { return CANDS.filter(function (c) { return answered(c) && !dropped(c); }); }
-function chip(t, st) { return '<span class="chip" style="' + st + '">' + esc(t) + '</span>'; }
-function diffList(c) {
-  return '<div style="display:flex;flex-direction:column;gap:7px">' + diffsOf(c).map(function (d) {
-    var m = DIFF[d[0]];
-    return '<div class="diff" style="color:' + m[1] + '">' + ic(m[0], 'i-s') + '<span>' + esc(d[1]) + '</span></div>';
-  }).join('') + '</div>';
+function pickedList() { return visible().filter(function (c) { return S.picked[c.id]; }); }
+function clientStatusChip(key, asBtn) {
+  var st = CST[S.cls[key].status];
+  if (asBtn) return '<button class="chip" style="' + TONE[st[1]] + '" data-a="openStatus" data-v="' + key + '">' + st[0] + ic('down', 'i-s') + '</button>';
+  return chip(st[0], TONE[st[1]]);
 }
-function candBtn(c, top) {
-  return '<button class="cand" data-a="offer" data-v="' + c.id + '"><div class="thumb">' + ic('car') + '</div><div class="cand-b">' +
-    (top ? '<div class="cm" style="font-size:12px">' + esc(top) + '</div>' : '') +
-    '<div class="ct">' + esc(c.car) + '</div><div class="cm">' + esc(c.meta) + '</div>' +
-    '<div class="row sb" style="padding-top:2px"><span class="price">' + rub(c.total) + '</span>' + tag(c) + '</div></div></button>';
+
+/* цена клиенту */
+function pr(id) {
+  if (!S.prices[id]) S.prices[id] = { v: Math.round(BY[id].total * 1.05 / 10000) * 10000, appr: null, apprV: null, hist: [] };
+  return S.prices[id];
+}
+function priceState(id) {
+  var c = BY[id], p = pr(id), v = p.v, cost = c.total;
+  var margin = (v - cost) / cost * 100, toMed = (v - MARKET.median) / MARKET.median * 100;
+  var why = [];
+  if (v < cost) return { k: 'below', margin: margin, toMed: toMed, why: ['ниже себестоимости'] };
+  if (toMed < -S.rule.median) why.push('ниже медианы рынка больше чем на ' + S.rule.median + '%');
+  if (margin < S.rule.margin) why.push('маржа меньше ' + S.rule.margin + '%');
+  if (!why.length) return { k: 'ok', margin: margin, toMed: toMed, why: why };
+  var k = p.apprV === v ? (p.appr === 'ok' ? 'approved' : p.appr === 'pending' ? 'pending' : p.appr === 'rejected' ? 'rejected' : 'need') : 'need';
+  return { k: k, margin: margin, toMed: toMed, why: why };
+}
+function sendable(id) { var k = priceState(id).k; return k === 'ok' || k === 'approved'; }
+function pendingList() { return CANDS.filter(function (c) { return S.prices[c.id] && priceState(c.id).k === 'pending'; }); }
+
+function diffList(c, short) {
+  var d = diffsOf(c), shown = short ? d.filter(function (x) { return x[0] !== 'ok'; }) : d, okN = d.length - shown.length;
+  return '<div style="display:flex;flex-direction:column;gap:7px">' + shown.map(function (x) {
+    var m = DIFF[x[0]];
+    return '<div class="diff" style="color:' + m[1] + '">' + ic(m[0], 'i-s') + '<span>' + esc(x[1]) + '</span></div>';
+  }).join('') + (short && okN ? '<div class="diff" style="color:#0B6B43">' + ic('check', 'i-s') + '<span>Остальное совпадает, ' + okN + ' ' + (okN === 1 ? 'параметр' : okN < 5 ? 'параметра' : 'параметров') + '</span></div>' : '') + '</div>';
+}
+function priceLine(c) {
+  var st = priceState(c.id);
+  var badge = st.k === 'pending' ? chip('ждёт владельца', TONE.warn) : st.k === 'need' ? chip('нужно подтверждение', TONE.warn) : st.k === 'rejected' ? chip('отклонено', TONE.bad) : st.k === 'approved' ? chip('подтверждено', TONE.good) : '';
+  return '<div class="row sb"><span class="cm">Клиенту ' + rub(pr(c.id).v) + ', маржа ' + pct(st.margin) + '</span>' + badge + '</div>';
+}
+function vcard(c, top) {
+  var on = !!S.picked[c.id], open = !!S.open[c.id];
+  var h = '<div class="vcard ' + (on ? 'picked' : '') + '"><div class="vrow">' +
+    '<button class="ck ' + (on ? 'on' : '') + '" data-a="pick" data-v="' + c.id + '" aria-label="Выбрать вариант" aria-pressed="' + on + '"><span>' + (on ? ic('check', 'i-s') : '') + '</span></button>' +
+    '<button class="vmain" data-a="expand" data-v="' + c.id + '" aria-expanded="' + open + '">' +
+    (top ? '<span class="cm" style="font-size:12px">' + esc(top) + '</span>' : '') +
+    '<span class="ct">' + esc(c.car) + '</span><span class="cm">' + esc(c.meta) + '</span>' +
+    '<span class="row sb" style="padding-top:2px"><span class="price">' + rub(c.total) + '</span>' + tag(c) + '</span></button></div>';
+  if (open) {
+    h += '<div class="vexp"><div class="seg" style="align-self:flex-start"><button class="' + (S.detail ? '' : 'on') + '" data-a="detail" data-v="0" style="padding:0 14px">Кратко</button><button class="' + (S.detail ? 'on' : '') + '" data-a="detail" data-v="1" style="padding:0 14px">Подробно</button></div>' +
+      diffList(c, !S.detail) + '<div class="hr"></div>' + priceLine(c) +
+      '<button class="btn b-sm" style="width:100%" data-a="offer" data-v="' + c.id + '">Расчёт и цена клиенту</button></div>';
+  }
+  return h + '</div>';
 }
 
 /* ---------- экраны ---------- */
@@ -250,7 +374,7 @@ function vLogin() {
   var roles = [['manager', 'Менеджер'], ['owner', 'Владелец'], ['supplier', 'Поставщик']].map(function (r) {
     return '<button class="' + (S.role === r[0] ? 'on' : '') + '" data-a="role" data-v="' + r[0] + '">' + r[1] + '</button>';
   }).join('');
-  var h = '<div class="scroll" style="padding:calc(32px + env(safe-area-inset-top)) 20px 24px;gap:24px">' +
+  var h = '<div class="scroll" style="padding:calc(32px + env(safe-area-inset-top)) 20px 24px;gap:24px;max-width:440px;margin:0 auto;width:100%">' +
     '<div class="row" style="gap:10px"><div style="width:40px;height:40px;border-radius:12px;background:#2B59FF;color:#fff;display:flex;align-items:center;justify-content:center">' + ic('car') + '</div><div style="font-weight:700;font-size:19px">Подбор</div></div>' +
     '<div class="seg">' + roles + '</div>';
   if (S.role === 'supplier') {
@@ -276,31 +400,69 @@ function vLogin() {
   return h + '</div>';
 }
 function cellsHtml() {
-  var d = S.code.split('');
-  var out = '';
+  var d = S.code.split(''), out = '';
   for (var i = 0; i < 6; i++) out += '<div class="cell' + (i === d.length ? ' cur' : '') + '">' + (d[i] || '') + '</div>';
   return out;
 }
 
 function vList() {
   var owner = S.role === 'owner';
-  var cnt = function (f) { return REQS.filter(function (r) { return f === 'all' || r.f === f; }).length; };
-  var pills = [['all', 'Все'], ['work', 'В работе'], ['client', 'Ждут клиента'], ['closed', 'Закрытые']].map(function (f) {
+  var cnt = function (f) { return REQS.filter(function (r) { return f === 'all' || S.cls[r.key].status === f; }).length; };
+  var pills = [['all', 'Все'], ['search', 'Ищем'], ['think', 'Думает'], ['lost', 'Слился'], ['won', 'Заказал']].map(function (f) {
     return '<button class="pill ' + (S.listFilter === f[0] ? 'on' : '') + '" data-a="filter" data-v="' + f[0] + '">' + f[1] + ' ' + cnt(f[0]) + '</button>';
   }).join('');
-  var items = REQS.filter(function (r) { return S.listFilter === 'all' || r.f === S.listFilter; }).map(function (r) {
-    var status = r.status, tone = r.tone;
-    if (r.live) { if (S.sent) { status = 'отправлено'; tone = 'warn'; } else { status = 'ответили ' + S.supArrived + ' из 4'; tone = 'info'; } }
-    return '<button class="cand" style="padding:14px 16px" data-a="' + (r.live ? 'openCard' : 'demoOnly') + '"><div class="cand-b" style="gap:4px">' +
-      '<div class="row sb"><span class="ct">' + esc(r.title) + '</span><span class="cm" style="font-size:12px">' + esc(r.when) + '</span></div>' +
-      '<div class="cm">' + esc(r.sub) + '</div>' +
-      '<div class="row sb" style="gap:10px;padding-top:6px"><span class="cm" style="color:#111214;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(owner ? r.client + ' · ' + r.mgr : r.client) + '</span>' + chip(status, TONE[tone]) + '</div></div></button>';
+  var items = REQS.filter(function (r) { return S.listFilter === 'all' || S.cls[r.key].status === S.listFilter; }).map(function (r) {
+    var search = r.search;
+    if (r.live) search = S.sent ? ['отправлено', 'muted'] : ['ответили ' + S.supArrived + ' из 4', 'muted'];
+    var cl = S.cls[r.key];
+    var active = isWide() && r.live && S.screen !== 'list' && S.stack.indexOf('list') >= 0;
+    return '<button class="li' + (active ? ' active' : '') + '" data-a="' + (r.live ? 'openCard' : 'demoOnly') + '"><span class="cand-b" style="gap:2px">' +
+      '<span class="row sb"><span class="ct">' + esc(r.title) + '</span><span class="cm" style="font-size:12px">' + esc(r.when) + '</span></span>' +
+      '<span class="cm">' + esc(cl.name) + (owner ? ', ' + esc(r.mgr) : '') + '</span>' +
+      '<span class="row" style="gap:6px;padding-top:6px">' + clientStatusChip(r.key) + chip(search[0], TONE[search[1]]) + '</span></span></button>';
   }).join('');
-  return '<div class="scroll">' +
-    '<button class="btn b-acc" style="min-height:56px" data-a="goNew">' + ic('mic') + 'Новый запрос</button>' +
-    '<button class="banner" style="background:#FFF1DC;color:#6A3A00;align-items:center;cursor:pointer" data-a="tab" data-v="feedback">' + ic('bell') +
-    '<div style="flex:1"><b>Перезвонить ООО «Вектор»</b><p>BMW X5, нет ответа 3 дня</p></div>' + ic('next', 'i-s') + '</button>' +
-    '<div class="pills">' + pills + '</div>' + items + '</div>';
+  var pend = pendingList();
+  var banner = owner && pend.length
+    ? '<button class="banner" style="background:#FFF1DC;color:#6A3A00;align-items:center;cursor:pointer" data-a="go" data-v="approve">' + ic('shield') +
+      '<div style="flex:1"><b>Цена ждёт подтверждения</b><p>' + pend.length + ' ' + (pend.length === 1 ? 'вариант' : 'варианта') + ' по Toyota Camry</p></div>' + ic('next', 'i-s') + '</button>'
+    : S.cls.bmw.status === 'think' && !S.cls.bmw.snoozed
+      ? '<button class="banner" style="background:#FFF1DC;color:#6A3A00;align-items:center;cursor:pointer" data-a="tab" data-v="feedback">' + ic('bell') +
+        '<div style="flex:1"><b>ООО «Вектор» слился?</b><p>Думает ' + days(S.cls.bmw.days) + ' по BMW X5</p></div>' + ic('next', 'i-s') + '</button>' : '';
+  return '<div class="scroll" data-k="list">' +
+    '<button class="btn b-acc" style="min-height:56px" data-a="goLead">' + ic('plus') + 'Новый лид</button>' + banner +
+    '<div class="pills">' + pills + '</div>' + (items ? '<div class="group">' + items + '</div>' : '<div class="card" style="align-items:center;padding:24px"><span class="cm">В этом статусе запросов нет</span></div>') + '</div>';
+}
+
+function vLead() {
+  var h = '<div class="scroll"><div class="seg"><button class="' + (S.leadMode === 'quick' ? 'on' : '') + '" data-a="leadMode" data-v="quick">Быстрое поле</button><button class="' + (S.leadMode === 'form' ? 'on' : '') + '" data-a="leadMode" data-v="form">Форма</button></div>';
+  if (S.leadMode === 'quick') {
+    h += '<div class="card"><label for="lt" class="lbl">Сообщение клиента</label><textarea id="lt" class="inp" data-in="leadText">' + esc(S.leadText) + '</textarea>' +
+      '<button class="btn b-pri" data-a="leadParse">' + ic('spark', 'i-s') + 'Разобрать</button></div>';
+    if (S.leadParsed) {
+      h += '<div class="card"><div class="row sb"><b>Лид</b>' + chip('новый клиент', TONE.good) + '</div><dl class="kv">' +
+        '<dt>Имя</dt><dd>Алексей</dd><dt>Телефон</dt><dd>+7 916 204 18 41</dd><dt>Интерес</dt><dd>Toyota Camry XV70</dd><dt>Бюджет</dt><dd>до 3,2 млн ₽</dd><dt>Канал</dt><dd>WhatsApp</dd></dl>' +
+        '<div class="row cm" style="gap:6px">' + ic('inbox', 'i-s') + 'Исходный текст сохранён комментарием</div>' +
+        '<button class="btn b-sm" style="width:100%" data-a="leadParse">Исправить разбор</button></div>';
+      h += anketa();
+      h += '<button class="btn b-acc" data-a="leadCreate">Создать запрос</button>';
+    }
+  } else {
+    h += '<div class="card"><div class="field"><label for="fn">Имя</label><input id="fn" class="inp" data-in="fName" value="' + esc(S.fName) + '" placeholder="Алексей"></div>' +
+      '<div class="field"><label for="fp">Телефон</label><input id="fp" class="inp" data-in="fPhone" inputmode="tel" value="' + esc(S.fPhone) + '" placeholder="+7 900 000 00 00"></div></div>' + anketa() +
+      '<button class="btn b-acc" data-a="leadCreate">Создать лид</button>';
+  }
+  return h + '</div>';
+}
+function anketa() {
+  var h = '<div class="card"><button class="btn sb" style="background:none;padding:0;min-height:28px" data-a="anketa">Анкета клиента' + ic('down', '', S.anketa ? 'transform:rotate(180deg)' : '') + '</button>';
+  if (S.anketa) {
+    var seg = function (key, opts) { return '<div class="seg">' + opts.map(function (o) { return '<button class="' + (S[key] === o[0] ? 'on' : '') + '" data-a="setv" data-k="' + key + '" data-v="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div>'; };
+    h += '<div class="field"><label for="ac">Город</label><input id="ac" class="inp" placeholder="Москва"></div>' + seg('legal', [['person', 'Физлицо'], ['company', 'Юрлицо']]) +
+      seg('pay', [['cash', 'Наличные'], ['credit', 'Кредит'], ['leasing', 'Лизинг']]) +
+      '<div class="field"><label for="at">Когда покупает</label><input id="at" class="inp" placeholder="в течение месяца"></div>' +
+      '<span class="muted">Видят только менеджер и владелец</span>';
+  }
+  return h + '</div>';
 }
 
 function vNew() {
@@ -318,97 +480,137 @@ function vNew() {
       h += '<div class="card" style="background:#FFF7EA"><b>Какая комплектация?</b><div class="wrap">' +
         ['Prestige', 'Luxe', 'Любая'].map(function (t) { return '<button class="pill" data-a="trim" data-v="' + t + '">' + t + '</button>'; }).join('') + '</div></div>';
     }
-    h += '<div class="card" style="gap:10px"><div class="row sb"><span class="ct">Алексей Морозов</span>' + chip('клиент', TONE.good) + '</div>' +
-      '<div class="row sb"><span style="font-size:14px">+7 916 204 18 41</span><span class="row cm" style="gap:4px">' + ic('lock', 'i-s') + 'скрыто от поставщиков</span></div></div>' +
-      '<div class="g3">' + [['globe', 'Поставщики'], ['box', 'Склад'], ['search', 'Доски']].map(function (x) {
-        return '<div class="card" style="padding:12px;gap:6px;align-items:flex-start">' + ic(x[0], '', 'color:#2B59FF') + '<span style="font-size:13px;font-weight:600">' + x[1] + '</span></div>';
-      }).join('') + '</div>' +
-      '<button class="btn b-acc" data-a="go" data-v="supcheck">Запустить поиск</button>';
+    h += '<div class="g3">' + [['globe', 'Поставщики'], ['box', 'Склад'], ['search', 'Доски']].map(function (x) {
+      return '<div class="card" style="padding:12px;gap:6px;align-items:flex-start">' + ic(x[0], '', 'color:#2B59FF') + '<span style="font-size:13px;font-weight:600">' + x[1] + '</span></div>';
+    }).join('') + '</div><button class="btn b-acc" data-a="go" data-v="supcheck">Запустить поиск</button>';
   }
   return h + '</div>';
 }
 
 function vSupcheck() {
   var trimTxt = S.trim || 'не указана';
-  var h = '<div class="scroll">' + (S.cleaned
-    ? '<div class="banner" style="background:#E7F6EE;color:#0B6B43">' + ic('shieldOk') + '<div><b>Можно отправлять</b><p>Данных клиента нет</p></div></div>'
-    : '<div class="banner" style="background:#FDECEC;color:#8C1D18">' + ic('lock') + '<div><b>Отправка заблокирована</b><p>В тексте имя и телефон клиента</p></div></div>') +
+  return '<div class="scroll"><div class="note" style="background:#EAF0FF;color:#1E3A9E">' + ic('shieldOk') + '<div><b>Имя и телефон клиента удалены.</b> Запись есть в журнале</div></div>' +
     '<div class="card"><span class="lbl">Так увидит поставщик</span><dl class="kv">' +
     '<dt>Модель</dt><dd>Camry XV70 рестайлинг</dd><dt>Годы</dt><dd>с 2021 по 2023</dd><dt>Пробег</dt><dd>до 60 000 км</dd>' +
     '<dt>Цвет</dt><dd>белый, серебристый, серый</dd><dt>Комплектация</dt><dd>' + esc(trimTxt) + '</dd><dt>Бюджет</dt><dd>до 3 200 000 ₽</dd></dl>' +
-    '<div style="background:#F4F4F6;border-radius:14px;padding:12px 14px;font-size:14px;line-height:1.5">' +
-    (S.cleaned ? 'Срочно' : 'Срочно, клиент <span class="hit">Алексей</span>, номер <span class="hit">+7 916 204 18 41</span>') + '</div>' +
-    (S.cleaned ? '' : '<button class="btn b-pri" data-a="clean">Удалить найденное</button><button class="btn" data-a="unblock">Попросить снять блокировку</button>') +
-    '</div><div class="card"><div class="row sb"><b>4 поставщика по Toyota</b><span class="row cm" style="gap:4px">' + ic('lock', 'i-s') + 'анонимно</span></div>' +
+    '<div style="background:#F4F4F6;border-radius:14px;padding:12px 14px;font-size:14px;line-height:1.6">Срочно, клиент <span class="rm">имя удалено</span>, номер <span class="rm">телефон удалён</span></div></div>' +
+    '<div class="card"><div class="row sb"><b>4 поставщика по Toyota</b><span class="row cm" style="gap:4px">' + ic('lock', 'i-s') + 'анонимно</span></div>' +
     '<div class="wrap">' + ['П-07 Япония', 'П-03 ОАЭ', 'П-11 Китай', 'П-14 Корея'].map(function (x) { return chip(x, TONE.muted); }).join('') + '</div></div>' +
-    '<button class="btn ' + (S.cleaned ? 'b-acc' : 'b-off') + '" data-a="sendSup">' + ic('send') + 'Отправить</button></div>';
-  return h;
+    '<button class="btn b-acc" data-a="sendSup">' + ic('send') + 'Отправить</button></div>';
 }
 
+function analytics() {
+  var span = MARKET.hi - MARKET.lo, lo = MARKET.lo - span * 0.15, hi = MARKET.hi + span * 0.15;
+  var pos = function (v) { return Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100)); };
+  var h = '<div class="card"><div class="row sb" style="align-items:flex-end"><div><div class="cm">Медиана рынка</div><div style="font-weight:700;font-size:20px;letter-spacing:-.01em">' + rub(MARKET.median) + '</div></div>' +
+    '<span class="cm" style="text-align:right">' + MARKET.n + ' объявлений<br>за ' + MARKET.period + '</span></div>' +
+    '<div class="bar" role="img" aria-label="Рынок от ' + rub(MARKET.lo) + ' до ' + rub(MARKET.hi) + ', бюджет клиента ' + rub(BUDGET) + '"><div class="rng" style="left:' + pos(MARKET.lo) + '%;right:' + (100 - pos(MARKET.hi)) + '%"></div>' +
+    '<div class="mk" style="left:' + pos(MARKET.median) + '%;background:#2347D6"><em style="color:#2347D6">медиана</em></div>' +
+    '<div class="mk" style="left:' + pos(BUDGET) + '%;background:#111214"><em style="color:#111214;top:-20px">бюджет</em></div></div>' +
+    '<div class="row sb cm" style="font-size:12px"><span>' + rub(MARKET.lo) + '</span><span>' + rub(MARKET.hi) + '</span></div>' +
+    '<button class="btn sb" style="background:none;padding:0;min-height:36px;font-size:14px" data-a="deals" aria-expanded="' + !!S.deals + '">Сделки дилера по этой модели, 2' + ic('down', 'i-s', S.deals ? 'transform:rotate(180deg)' : '') + '</button>';
+  if (S.deals) h += '<div class="row sb" style="font-size:14px"><span>Продана 2 июля, 2022 г.</span><b>3 050 000 ₽</b></div>' +
+    '<div class="row sb" style="font-size:14px"><span>Отказ 14 августа, 2021 г.</span><b>2 950 000 ₽</b></div>' +
+    '<div class="cm">Отказ был из-за цены. По сегодняшнему курсу та машина стоила бы 3 110 000 ₽</div>';
+  return h + '</div>';
+}
+function secHead(key, title, right) {
+  return '<button class="sec-h sec-btn ' + (S.fold[key] ? 'closed' : '') + '" id="sec-' + key + '" data-a="fold" data-v="' + key + '" aria-expanded="' + !S.fold[key] + '"><h2>' + title + '</h2><span class="cm">' + right + '</span>' + ic('down', 'chev') + '</button>';
+}
 function vCard() {
-  var trimTxt = S.trim || 'не указана';
-  var doneN = S.callIdx;
-  var h = '<div class="scroll"><div class="card"><div class="wrap">' + chip('XV70 рестайлинг', TONE.info) +
-    ['с 2021 по 2023', 'до 60 тыс. км', 'белый или серый', trimTxt, 'до 3,2 млн ₽'].map(function (x) { return chip(x, TONE.muted); }).join('') +
-    '</div><div class="hr"></div><div class="row sb"><div><div style="font-weight:600">Алексей Морозов</div><div class="cm">Физлицо</div></div>' +
-    '<a class="ib" href="#" data-a="callClient" aria-label="Позвонить клиенту" style="background:#EEF0F3">' + ic('phone') + '</a></div></div>' +
-    '<div class="g3">' + [['Поставщики', S.supArrived + ' из 4', 'color:#2347D6'], ['Склад', S.stockOn ? '1' : '…', ''], ['Доски', S.marketOn ? '3' : '…', '']].map(function (p) {
-      return '<div class="card" style="padding:12px;gap:2px"><div class="cm" style="font-size:12px">' + p[0] + '</div><div style="font-weight:700;font-size:16px;' + p[2] + '">' + p[1] + '</div></div>';
-    }).join('') + '</div>' +
-    '<div class="sec-h"><h2>Ранее</h2><span class="cm">14 августа</span></div>' +
-    '<div class="card" style="gap:10px"><div class="row sb"><span class="ct">Camry 2021, 38 000 км</span>' + chip('отказ, дорого', TONE.bad) + '</div>' +
-    '<dl class="kv"><dt>Тогда</dt><dd>2 950 000 ₽</dd><dt>Сейчас</dt><dd style="color:#2347D6">3 110 000 ₽</dd></dl></div>' +
-    '<div class="sec-h"><h2>Наличие</h2><span class="cm">МойСклад</span></div>' +
-    (S.stockOn ? candBtn(BY.s1) : '<div class="card"><span class="cm">Ищем на складе</span></div>') +
-    '<div class="sec-h"><h2>Рынок</h2><span class="cm">' + (doneN >= 3 ? 'проверено' : (3 - doneN) + ' на звонок') + '</span></div>';
-  if (S.marketOn) {
-    h += CALL_IDS.map(function (id) { return candBtn(BY[id], BY[id].src); }).join('') +
-      '<button class="btn b-pri" data-a="go" data-v="calls">' + ic('phone') + 'Обзвонить</button>';
-  } else h += '<div class="card"><span class="cm">Собираем объявления</span></div>';
-  h += '<div class="sec-h"><h2>Поставщики</h2><span class="cm">' + S.supArrived + ' из 4</span></div>';
-  SUPS.forEach(function (x) {
-    var c = x.cid ? BY[x.cid] : null;
-    if (c && x.order <= S.supArrived) {
-      h += candBtn(c, x.code + ' ' + x.geo + ' · ' + c.term).replace(tag(c), chip(scoreTxt(c), scoreSt(c)));
-      if (x.cid === 'p7') h += '<button class="btn b-sm" style="width:100%;background:#EAF0FF;color:#2347D6" data-a="go" data-v="reply">' + ic('spark', 'i-s') + 'Проверить разбор ответа</button>';
-    } else {
-      h += '<div class="card" style="flex-direction:row;align-items:center;gap:12px;padding:12px 12px 12px 16px"><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px">' + x.code + ' ' + x.geo + '</div>' +
-        '<div class="cm" style="' + (x.alarm ? 'color:#B3261E;font-weight:600' : '') + '">' + (c ? 'ждём ответ' : x.note) + '</div></div>' +
-        '<button class="btn b-sm" data-a="remind" data-v="' + x.code + '">Напомнить</button></div>';
-    }
-  });
-  h += '<div class="card" style="background:#EEF0F3;gap:4px"><div class="row sb"><span class="ct">Camry XV80, 2025</span><span class="price">4 120 000 ₽</span></div><div class="cm">Другое поколение, в сравнение не входит</div></div>' +
-    '<button class="btn b-pri" data-a="go" data-v="compare">Сравнить ' + visible().length + ' варианта</button>' +
-    '<button class="btn b-acc" data-a="go" data-v="client">Текст клиенту</button></div>';
+  var doneN = S.callIdx, trimTxt = S.trim || 'не указана', np = pickedList().length;
+  var h = '<div class="scroll" data-k="card"><div class="card"><div class="row sb"><div><div style="font-weight:600">' + esc(S.cls.camry.name) + '</div><div class="cm">Физлицо, WhatsApp</div></div>' +
+    '<div class="row">' + clientStatusChip('camry', true) + '<a class="ib" href="#" data-a="callClient" aria-label="Позвонить клиенту" style="background:#EEF0F3">' + ic('phone') + '</a></div></div>' +
+    '<div class="wrap">' + chip('XV70 рестайлинг', TONE.info) + ['с 2021 по 2023', 'до 60 тыс. км', 'белый или серый', trimTxt, 'до 3,2 млн ₽'].map(function (x) { return chip(x, TONE.muted); }).join('') + '</div></div>' +
+    '<nav class="jumpbar" aria-label="Блоки запроса">' + [['stock', 'Склад', S.stockOn ? '1' : '…'], ['sup', 'Поставщики', S.supArrived + ' из 4'], ['market', 'Рынок', S.marketOn ? String(CALL_IDS.filter(function (id) { return !dropped(BY[id]); }).length) : '…'], ['picked', 'Выбрано', String(np)]].map(function (x) {
+      return '<button class="' + (x[0] === 'picked' && np ? 'hot' : '') + '" data-a="jump" data-v="' + x[0] + '"><b>' + x[2] + '</b>' + x[1] + '</button>';
+    }).join('') + '</nav>' + analytics();
+
+  h += secHead('stock', 'Наличие', 'МойСклад');
+  if (!S.fold.stock) h += S.stockOn ? vcard(BY.s1) : '<div class="card"><span class="cm">Ищем на складе</span></div>';
+
+  h += secHead('sup', 'Поставщики', S.supArrived + ' из 4');
+  if (!S.fold.sup) {
+    var waiting = '';
+    SUPS.forEach(function (x) {
+      var c = x.cid ? BY[x.cid] : null;
+      if (c && x.order <= S.supArrived) {
+        h += vcard(c, x.code + ' ' + x.geo + ', ' + c.term);
+        if (x.cid === 'p7') h += '<button class="btn b-sm" style="width:100%;background:#EAF0FF;color:#2347D6" data-a="go" data-v="reply">' + ic('spark', 'i-s') + 'Проверить разбор ответа П-07</button>';
+      } else {
+        waiting += '<div class="li" style="cursor:default;padding:8px 8px 8px 16px"><span class="cand-b"><span style="font-weight:600;font-size:14px">' + x.code + ' ' + x.geo + '</span>' +
+          '<span class="cm" style="' + (x.alarm ? 'color:#B3261E;font-weight:600' : '') + '">' + (c ? 'ждём ответ' : x.note) + '</span></span>' +
+          '<button class="btn b-sm" data-a="remind" data-v="' + x.code + '">Напомнить</button></div>';
+      }
+    });
+    if (waiting) h += '<div class="group">' + waiting + '</div>';
+  }
+
+  h += secHead('market', 'Рынок РФ', S.marketOn ? (doneN >= 3 ? 'проверено' : (3 - doneN) + ' на звонок') : 'собираем');
+  if (!S.fold.market) {
+    if (S.marketOn) {
+      h += CALL_IDS.filter(function (id) { return !dropped(BY[id]); }).map(function (id) { return vcard(BY[id], BY[id].src); }).join('');
+      if (doneN < 3) h += '<button class="btn b-pri" data-a="go" data-v="calls">' + ic('phone') + 'Обзвонить</button>';
+    } else h += '<div class="card"><span class="cm">Собираем объявления</span></div>';
+  }
+  h += '<div class="note" style="background:#E8EAEE;color:#4A4E55">' + ic('dash', 'i-s') + '<span>Ещё нашлась Camry XV80 2025 за 4 120 000 ₽. Это другое поколение, в подбор не входит</span></div></div>';
   return h;
 }
-
-function vCompare() {
-  var list = visible().slice().sort(function (a, b) { return b.score - a.score; });
-  return '<div class="scroll">' + list.map(function (c) {
-    return '<div class="card"><div class="row sb"><span class="cm" style="font-size:12px">' + esc(c.src) + '</span>' + chip(scoreTxt(c), scoreSt(c)) + '</div>' +
-      '<div><div class="ct" style="font-size:17px">' + esc(c.car) + '</div><div class="cm">' + esc(c.meta) + '</div></div>' +
-      '<div class="row sb"><span style="font-weight:700;font-size:17px">' + rub(c.total) + '</span><span class="cm">' + esc(c.term) + '</span></div>' +
-      '<div class="hr"></div>' + diffList(c) + '<button class="btn b-sm" style="width:100%" data-a="offer" data-v="' + c.id + '">Расчёт под ключ</button></div>';
-  }).join('') + '<div class="card" style="background:#EEF0F3;gap:4px"><div class="row sb"><span class="ct">Camry XV80, 2025</span><span class="price">4 120 000 ₽</span></div><div class="cm">Другое поколение</div></div></div>';
+function dockCard() {
+  var list = pickedList(), n = list.length, blocked = list.filter(function (c) { return !sendable(c.id); });
+  var sub = !n ? 'Отметьте варианты галочкой' : blocked.length ? blocked.length + ' ждёт решения по цене' : 'Сумма ' + rub(list.reduce(function (a, c) { return a + pr(c.id).v; }, 0)).replace(' ₽', '') + ' ₽';
+  return '<div class="dock"><div style="flex:1;min-width:0"><div style="font-weight:700">Выбрано ' + n + '</div><div class="cm" style="' + (blocked.length ? 'color:#8A4B00' : '') + '">' + sub + '</div></div>' +
+    '<button class="btn b-sm ' + (n ? 'b-acc' : 'b-off') + '" data-a="toClient">Текст или КП</button></div>';
 }
 
 function vOffer() {
-  var c = BY[S.sel], imp = c.kind === 'import', rows;
+  var c = BY[S.sel], imp = c.kind === 'import', rows, p = pr(c.id);
   if (c.calc) rows = c.calc.map(function (r) { return [r[0], typeof r[1] === 'number' ? rub(r[1]) : r[1]]; });
   else if (c.kind === 'stock') rows = [['Цена склада', rub(c.total - 60000)], ['Подготовка', rub(20000)], ['Оформление', rub(40000)]];
   else rows = [['Цена продавца', rub(c.total - 150000)], ['Диагностика', rub(15000)], ['Доставка', rub(45000)], ['Комиссия', rub(90000)]];
-  var inC = S.inClient[c.id];
-  return '<div class="scroll"><div class="ph" style="height:210px;border-radius:22px;flex:none">' + ic('img', 'i-l') +
-    '<span class="chip" style="position:absolute;right:12px;bottom:12px;background:rgba(17,18,20,.75);color:#fff">1 из ' + c.photos + '</span>' +
-    (c.wm ? '<span class="chip" style="position:absolute;left:12px;bottom:12px;' + TONE.warn + '">2 фото с водяным знаком</span>' : '') + '</div>' +
+  var on = !!S.picked[c.id];
+  return '<div class="scroll"><div class="ph" style="height:180px;border-radius:18px;flex:none" role="img" aria-label="Фото автомобиля">' + ic('img', 'i-l') + '</div>' +
+    '<div class="cap">' + c.photos + ' фото' + (c.wm ? ', на 2 водяной знак поставщика, клиенту не уйдут' : '') + '</div>' +
     '<div class="card"><div class="row sb"><span class="cm" style="font-size:12px">' + esc(c.src) + '</span>' + chip(scoreTxt(c), scoreSt(c)) + '</div>' +
-    '<div class="cm">' + esc(c.meta) + '</div>' + diffList(c) + '</div>' +
+    '<div class="cm">' + esc(c.meta) + '</div>' + diffList(c, false) + '</div>' +
     '<div class="card"><div class="seg"><button class="' + (imp ? 'on' : '') + '">Импорт</button><button class="' + (imp ? '' : 'on') + '">Авто в РФ</button></div>' +
     '<dl class="kv">' + rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('') + '</dl><div class="hr"></div>' +
-    '<div class="row sb"><b>Под ключ</b><span style="font-weight:700;font-size:22px">' + rub(c.total) + '</span></div>' +
+    '<div class="row sb"><b>Себестоимость под ключ</b><span style="font-weight:700;font-size:18px">' + rub(c.total) + '</span></div>' +
     '<span class="muted">' + (imp ? 'Курс и тарифы на 16 октября, 10:40' : 'Тарифы на 16 октября, 10:40') + '</span></div>' +
-    '<button class="btn ' + (inC ? '' : 'b-acc') + '" data-a="toggleInClient">' + (inC ? 'Убрать из текста клиенту' : 'Добавить в текст клиенту') + '</button></div>';
+    '<div class="card"><label for="cp" style="font-weight:700;font-size:15px">Цена клиенту</label>' +
+    '<input id="cp" class="inp big" data-in="price" inputmode="numeric" value="' + num(p.v) + '"><div id="priceInfo" style="display:flex;flex-direction:column;gap:12px">' + priceInfo(c) + '</div></div>' +
+    '<button class="btn ' + (on ? '' : 'b-acc') + '" data-a="pick" data-v="' + c.id + '">' + (on ? 'Убрать из выбранных' : 'Выбрать для клиента') + '</button></div>';
+}
+function priceInfo(c) {
+  var st = priceState(c.id), p = pr(c.id);
+  var h = '<dl class="kv"><dt>Маржа</dt><dd style="' + (st.margin < S.rule.margin ? 'color:#8A4B00' : '') + '">' + rub(p.v - c.total) + ', ' + pct(st.margin) + '</dd>' +
+    '<dt>К медиане рынка</dt><dd style="' + (st.toMed < -S.rule.median ? 'color:#8A4B00' : '') + '">' + (st.toMed < 0 ? 'ниже на ' : 'выше на ') + pct(st.toMed) + '</dd></dl>';
+  if (st.k === 'below') h += '<div class="note" style="background:#FDECEC;color:#8C1D18">' + ic('x') + '<div><b>Ниже себестоимости нельзя</b><br>Минимум ' + rub(c.total) + '</div></div>';
+  else if (st.k === 'ok') h += '<div class="note" style="background:#E7F6EE;color:#0B6B43">' + ic('check') + '<div><b>Цену можно отправлять</b></div></div>';
+  else if (st.k === 'approved') h += '<div class="note" style="background:#E7F6EE;color:#0B6B43">' + ic('shieldOk') + '<div><b>Владелец подтвердил</b></div></div>';
+  else if (st.k === 'pending') h += '<div class="note" style="background:#FFF1DC;color:#6A3A00">' + ic('clock') + '<div><b>Ждёт владельца</b><br>Отправить можно после подтверждения</div></div>';
+  else if (st.k === 'rejected') h += '<div class="note" style="background:#FDECEC;color:#8C1D18">' + ic('x') + '<div><b>Владелец отклонил</b><br>Поменяйте цену</div></div>';
+  else h += '<div class="note" style="background:#FFF1DC;color:#6A3A00">' + ic('shield') + '<div><b>Нужно подтверждение владельца</b><br>Цена ' + st.why.join(', ') + '</div></div>' +
+    '<button class="btn b-pri" data-a="askApprove" data-v="' + c.id + '">Запросить подтверждение</button>';
+  if (p.hist.length) h += '<div class="hr"></div><span class="lbl">История цены</span>' + p.hist.slice().reverse().map(function (x) {
+    return '<div class="row sb" style="font-size:13px"><span>' + rub(x[0]) + ' · ' + esc(x[1]) + '</span><span class="cm">' + esc(x[2]) + '</span></div>';
+  }).join('');
+  return h;
+}
+
+function vApprove() {
+  var list = pendingList();
+  if (!list.length) return '<div class="scroll"><div class="card" style="align-items:center;padding:32px 16px">' + ic('shieldOk', 'i-l', 'color:#0B6B43') + '<b>Всё подтверждено</b></div></div>';
+  return '<div class="scroll">' + list.map(function (c) {
+    var st = priceState(c.id), p = pr(c.id);
+    return '<div class="card"><div class="row sb"><span class="cm" style="font-size:12px">Марина Кравец · Toyota Camry</span>' + chip('ждёт', TONE.warn) + '</div>' +
+      '<div class="ct" style="font-size:17px">' + esc(c.car) + '</div><dl class="kv">' +
+      '<dt>Цена клиенту</dt><dd>' + rub(p.v) + '</dd><dt>Себестоимость</dt><dd>' + rub(c.total) + '</dd>' +
+      '<dt>Маржа</dt><dd>' + pct(st.margin) + '</dd><dt>К медиане рынка</dt><dd style="color:#8A4B00">' + (st.toMed < 0 ? 'ниже на ' : 'выше на ') + pct(st.toMed) + '</dd></dl>' +
+      '<div class="muted">Сработало правило ' + st.why.join(', ') + '</div>' +
+      '<div class="g2"><button class="btn b-sm" style="background:#FDECEC;color:#B3261E" data-a="reject" data-v="' + c.id + '">Отклонить</button>' +
+      '<button class="btn b-sm b-acc" data-a="approve" data-v="' + c.id + '">Подтвердить</button></div></div>';
+  }).join('') + '</div>';
 }
 
 function vCalls() {
@@ -418,19 +620,19 @@ function vCalls() {
     h += '<div class="row" style="justify-content:center;gap:5px;padding:2px 0 4px">' + CALL_IDS.map(function (id, i) {
       return '<span style="' + (i === S.callIdx ? 'width:22px;height:6px;border-radius:3px;background:#2B59FF' : 'width:6px;height:6px;border-radius:3px;background:' + (i < S.callIdx ? '#111214' : '#D3D5DA')) + '"></span>';
     }).join('') + '</div>' +
-      '<div style="position:relative;height:440px;flex:none">' +
+      '<div style="position:relative;height:440px;flex:none;max-width:420px;width:100%;margin:0 auto">' +
       (S.callIdx < 2 ? '<div style="position:absolute;inset:0;transform:translateY(14px) scale(.94);background:#fff;border-radius:24px;opacity:.6"></div>' : '') +
       '<div class="sw" id="sw" style="transform:translateX(' + (S.mm ? -24 : 0) + 'px) rotate(' + (S.mm ? -1.1 : 0) + 'deg)">' +
       '<div class="ph" style="height:170px;flex:none">' + ic('car', 'i-l') +
       '<span class="stamp" id="stOk" style="left:18px;background:#0B6B43;transform:rotate(-8deg)">ПРАВДА</span>' +
       '<span class="stamp" id="stNo" style="right:18px;background:#B3261E;transform:rotate(8deg);opacity:' + (S.mm ? 1 : 0) + '">НЕ ТО</span>' +
-      '<span class="chip" style="position:absolute;right:12px;bottom:12px;background:rgba(17,18,20,.75);color:#fff">' + c.photos + ' фото</span></div>' +
+      '</div>' +
       '<div style="flex:1;padding:16px;display:flex;flex-direction:column;gap:8px;min-height:0">' +
-      '<div class="cm" style="font-size:12px">' + esc(c.src) + '</div><div class="ct" style="font-size:19px">' + esc(c.car) + '</div>' +
+      '<div class="cm" style="font-size:12px">' + esc(c.src) + ', ' + c.photos + ' фото</div><div class="ct" style="font-size:19px">' + esc(c.car) + '</div>' +
       '<div class="cm">' + esc(c.meta) + '</div><div style="font-weight:700;font-size:20px">' + rub(c.total) + '</div>' +
       '<button class="btn" style="margin-top:auto" data-a="phone">' + ic('phone', 'i-s') + 'Позвонить</button></div></div></div>';
     if (!S.mm) {
-      h += '<div class="g2" style="gap:10px"><button class="btn" style="background:#FDECEC;color:#B3261E;min-height:58px" data-a="callNo">' + ic('x') + 'Не соответствует</button>' +
+      h += '<div class="g2" style="gap:10px;max-width:420px;width:100%;margin:0 auto"><button class="btn" style="background:#FDECEC;color:#B3261E;min-height:58px" data-a="callNo">' + ic('x') + 'Не соответствует</button>' +
         '<button class="btn" style="background:#0B6B43;color:#fff;min-height:58px" data-a="callOk">' + ic('check') + 'Соответствует</button></div>';
     } else if (S.mm === 'what') {
       var fake = S.mmFields.indexOf('fake') >= 0, any = S.mmFields.length > 0;
@@ -458,7 +660,7 @@ function vCalls() {
         var c = BY[id], r = res(id) || { r: 'ok', note: '' };
         return '<div class="card" style="gap:4px"><div class="row sb"><span class="ct">' + esc(c.car) + '</span>' + chip(RES[r.r][0], TONE[RES[r.r][1]]) + '</div>' +
           '<div class="cm">' + esc(c.src) + '</div>' + (r.note ? '<div style="font-size:13px;margin-top:4px">' + esc(r.note) + '</div>' : '') + '</div>';
-      }).join('') + '<button class="btn b-pri" data-a="go" data-v="compare">К сравнению</button>';
+      }).join('') + '<button class="btn b-pri" data-a="backToCard">К запросу</button>';
   }
   if (S.hist.length && !S.mm) h += '<button class="btn b-ghost" data-a="undo">' + ic('undo', 'i-s') + 'Вернуть карточку</button>';
   return h + '</div>';
@@ -481,53 +683,87 @@ function vReply() {
     '<div class="bubble" style="background:#F4F4F6;max-width:100%">Салон чистый, один владелец в Японии. Аукционный лист приложу.</div></div>' +
     '<div class="card"><div class="row sb"><b>Разбор</b>' + chip('93%', TONE.good) + '</div><dl class="kv">' +
     '<dt>Модель</dt><dd>Camry 2.5 G, 2022</dd><dt>Поколение</dt><dd>XV70 рестайлинг</dd><dt>Пробег</dt><dd>29 000 км</dd><dt>Цвет</dt><dd>белый</dd>' +
-    '<dt>Аукцион</dt><dd>¥ 2 150 000</dd><dt>Срок</dt><dd>от 45 до 60 дней</dd><dt>Под ключ</dt><dd>2 870 000 ₽</dd></dl>' +
-    '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">' +
-    '<div style="aspect-ratio:1;border-radius:12px;background:#E4E6EA"></div><div style="aspect-ratio:1;border-radius:12px;background:#E4E6EA"></div>' +
-    '<div style="aspect-ratio:1;border-radius:12px;background:#E4E6EA;display:flex;align-items:flex-end;padding:5px"><span class="chip" style="' + TONE.warn + ';font-size:10px;padding:1px 6px">знак</span></div>' +
-    '<div style="aspect-ratio:1;border-radius:12px;background:#E4E6EA;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;color:#4A4E55">+11</div></div></div>' +
-    '<button class="btn b-acc" data-a="confirmReply">Добавить в подбор</button><button class="btn" data-a="askSupplier">Уточнить у поставщика</button></div>';
+    '<dt>Аукцион</dt><dd>¥ 2 150 000</dd><dt>Срок</dt><dd>от 45 до 60 дней</dd><dt>Себестоимость</dt><dd>2 870 000 ₽</dd></dl></div>' +
+    '<button class="btn b-acc" data-a="confirmReply">Добавить в подбор</button><button class="btn" data-a="toast" data-v="Вопрос уйдёт через бота">Уточнить у поставщика</button></div>';
 }
 
 function vClient() {
-  var inc = CANDS.filter(function (c) { return S.inClient[c.id] && answered(c) && !dropped(c); });
-  var now = inc.filter(function (c) { return c.kind !== 'import'; }), lat = inc.filter(function (c) { return c.kind === 'import'; });
-  var lines = ['Алексей, добрый день! Подобрали Toyota Camry'], n = 0;
-  if (now.length) { lines.push('', 'В наличии в РФ'); now.forEach(function (c) { n++; lines.push(n + '. ' + c.car + ', ' + c.meta.split(' · ').join(', ') + ', ' + rub(c.total)); }); }
-  if (lat.length) { lines.push('', 'Под заказ'); lat.forEach(function (c) { n++; lines.push(n + '. ' + c.car + ', ' + c.meta.split(' · ').join(', ') + ', ' + rub(c.total) + ' под ключ, ' + c.term); }); }
-  lines.push('', 'Цена под ключ с доставкой, таможней и оформлением. Фото ниже');
-  var photos = inc.reduce(function (a, c) { return a + c.photos; }, 0);
-  return '<div class="scroll"><div class="wrap">' + ['без контактов', 'без источников', 'фото очищены'].map(function (t) {
-    return '<span class="chip" style="' + TONE.good + '">' + ic('check', 'i-s') + t + '</span>';
-  }).join('') + '</div>' +
-    '<div class="bubble" style="background:#fff;max-width:100%;border-radius:22px 22px 6px 22px;padding:16px;white-space:pre-line;font-size:15px">' + esc(lines.join('\n')) + '</div>' +
-    '<div class="g2"><button class="btn b-sm" data-a="toast" data-v="Текст скопирован">' + ic('copy', 'i-s') + 'Скопировать</button>' +
-    '<button class="btn b-sm" data-a="toast" data-v="Фото сохранены">' + ic('img', 'i-s') + photos + ' фото</button></div>' +
-    (S.sent ? '<div class="banner" style="background:#E7F6EE;color:#0B6B43">' + ic('check') + '<div><b>Отправлено в 12:40</b><p>Спросим о реакции через ' + days(S.t.client) + '</p></div></div>'
-      : '<button class="btn b-acc" data-a="markSent">Отправлено</button>') + '</div>';
+  var list = pickedList(), blocked = list.filter(function (c) { return !sendable(c.id); });
+  var h = '<div class="scroll"><div class="seg"><button class="' + (S.sendMode === 'text' ? 'on' : '') + '" data-a="sendMode" data-v="text">Текст</button><button class="' + (S.sendMode === 'kp' ? 'on' : '') + '" data-a="sendMode" data-v="kp">КП в PDF</button></div>';
+  if (!list.length) return h + '<div class="card" style="align-items:center;padding:28px 16px;text-align:center"><b>Ничего не выбрано</b><span class="cm">Отметьте варианты галочкой в запросе</span><button class="btn b-sm" data-a="back">К запросу</button></div></div>';
+  if (blocked.length) h += '<div class="banner" style="background:#FFF1DC;color:#6A3A00">' + ic('shield') + '<div><b>Цена ждёт решения</b><p>' + blocked.map(function (c) { return esc(c.car); }).join(', ') + '</p></div></div>';
+  var now = list.filter(function (c) { return c.kind !== 'import'; }), lat = list.filter(function (c) { return c.kind === 'import'; });
+  if (S.sendMode === 'text') {
+    var lines = ['Алексей, добрый день! Подобрали Toyota Camry'], n = 0;
+    if (now.length) { lines.push('', 'В наличии в РФ'); now.forEach(function (c) { n++; lines.push(n + '. ' + c.car + ', ' + c.meta.split(' · ').join(', ') + ', ' + rub(pr(c.id).v)); }); }
+    if (lat.length) { lines.push('', 'Под заказ'); lat.forEach(function (c) { n++; lines.push(n + '. ' + c.car + ', ' + c.meta.split(' · ').join(', ') + ', ' + rub(pr(c.id).v) + ' под ключ, ' + c.term); }); }
+    lines.push('', 'Цена под ключ с доставкой, таможней и оформлением. Фото ниже');
+    var photos = list.reduce(function (a, c) { return a + c.photos; }, 0);
+    h += '<div class="wrap">' + ['без контактов', 'без источников', 'фото очищены'].map(function (t) { return '<span class="chip" style="' + TONE.good + '">' + ic('check', 'i-s') + t + '</span>'; }).join('') + '</div>' +
+      '<div class="bubble" style="background:#fff;max-width:100%;border-radius:22px 22px 6px 22px;padding:16px;white-space:pre-line;font-size:15px">' + esc(lines.join('\n')) + '</div>' +
+      '<div class="g2"><button class="btn b-sm white" data-a="toast" data-v="Текст скопирован">' + ic('copy', 'i-s') + 'Скопировать</button>' +
+      '<button class="btn b-sm white" data-a="toast" data-v="Фото сохранены">' + ic('img', 'i-s') + photos + ' фото</button></div>';
+  } else {
+    h += '<div class="paper"><div class="row sb" style="align-items:flex-start"><div style="width:84px;height:34px;border-radius:6px;background:#EEF0F3;display:flex;align-items:center;justify-content:center;font-size:10px;color:#6B6F76;font-weight:600">[Логотип]</div>' +
+      '<div style="text-align:right;color:#6B6F76;font-size:10px">[Название дилера]<br>ИНН [0000000000]<br>[Адрес]</div></div>' +
+      '<h3 style="margin-top:18px">Коммерческое предложение</h3><div style="color:#6B6F76">Для Алексея Морозова · 22 октября 2026</div>' +
+      list.map(function (c, i) {
+        return '<div style="display:flex;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid #F0F1F3"><div style="width:72px;height:54px;border-radius:6px;background:#E4E6EA;flex:none"></div>' +
+          '<div style="flex:1;min-width:0"><b>' + (i + 1) + '. ' + esc(c.car) + '</b><div style="color:#6B6F76">' + esc(c.meta.split(' · ').join(', ')) + ', ' + (c.kind === 'import' ? 'под заказ ' + esc(c.term) : 'в наличии в РФ') + '</div></div>' +
+          '<div style="font-weight:700;white-space:nowrap">' + rub(pr(c.id).v) + '</div></div>';
+      }).join('') +
+      '<div style="margin-top:16px;padding:10px;border-radius:6px;background:#F4F4F6">Цена под ключ, действует ' + days(S.kpDays) + ' до 29 октября</div>' +
+      '<div style="margin-top:14px;color:#6B6F76">Менеджер Марина Кравец · [телефон дилера]</div></div>' +
+      '<div class="g2"><button class="btn b-sm white" data-a="toast" data-v="PDF сохранён">' + ic('download', 'i-s') + 'Скачать PDF</button>' +
+      '<button class="btn b-sm white" data-a="toast" data-v="Версия ' + (S.kpVer + 1) + ' сохранена">' + ic('file', 'i-s') + 'Версия ' + (S.kpVer + 1) + '</button></div>';
+  }
+  h += S.sent ? '<div class="banner" style="background:#E7F6EE;color:#0B6B43">' + ic('check') + '<div><b>Отправлено в 12:40</b><p>Статус клиента Думает, спросим о реакции через ' + days(S.t.client) + '</p></div></div>'
+    : '<button class="btn ' + (blocked.length ? 'b-off' : 'b-acc') + '" data-a="markSent">Отправлено</button>';
+  return h + '</div>';
+}
+
+function vStatus() {
+  var key = S.stKey, cl = S.cls[key], d = S.draft;
+  var h = '<div class="scroll"><div class="card" style="gap:2px"><div class="ct">' + esc(cl.name) + '</div><div class="cm">' + esc(cl.car) + '</div></div>' +
+    '<div class="card" style="gap:6px;padding:8px">' + ['search', 'think', 'lost', 'won'].map(function (k) {
+      var on = d.status === k;
+      return '<button class="cand" style="' + (on ? 'background:#F4F6FF' : '') + '" data-a="stPick" data-v="' + k + '"><span class="radio ' + (on ? 'on' : '') + '"></span><span class="cand-b"><span style="font-weight:600;font-size:15px">' + CST[k][0] + '</span></span>' + chip(CST[k][0], TONE[CST[k][1]]).replace(CST[k][0], '') + '</button>';
+    }).join('') + '</div>';
+  if (d.status === 'lost') {
+    h += '<div class="card"><b>Почему слился?</b>' + S.groups.map(function (g) {
+      return '<div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">' + g[0] + '</span><div class="wrap">' + g[1].map(function (r) {
+        return '<button class="pill soft ' + (d.reasons.indexOf(r) >= 0 ? 'on' : '') + '" data-a="stReason" data-v="' + esc(r) + '">' + esc(r) + '</button>';
+      }).join('') + '</div></div>';
+    }).join('');
+    if (d.reasons.length > 1) h += '<div class="hr"></div><span class="lbl">Главная причина</span><div class="wrap">' + d.reasons.map(function (r) {
+      return '<button class="pill soft ' + (d.main === r ? 'on' : '') + '" data-a="stMain" data-v="' + esc(r) + '">' + (d.main === r ? ic('star', 'i-s', 'margin-right:4px;vertical-align:-3px') : '') + esc(r) + '</button>';
+    }).join('') + '</div>';
+    if (d.reasons.indexOf('Другое') >= 0) h += '<div class="field"><label for="stn">Комментарий</label><input id="stn" class="inp" data-in="stNote" value="' + esc(d.note) + '" placeholder="Что случилось"></div>';
+    h += '</div>';
+  }
+  if (d.status === 'won') h += '<div class="banner" style="background:#E7F6EE;color:#0B6B43">' + ic('check') + '<div><b>Создадим заказ</b><p>Договор и предоплату ведём дальше в заказе</p></div></div>';
+  var ok = d.status !== 'lost' || d.reasons.length;
+  return h + '<button class="btn ' + (ok ? 'b-acc' : 'b-off') + '" data-a="stSave">Сохранить</button></div>';
 }
 
 function vFeedback() {
-  var opts = [['int', 'Интересно'], ['think', 'Думает'], ['no', 'Отказ'], ['none', 'Не ответил']].map(function (o) {
-    return '<button class="btn b-sm" style="' + (S.fb === o[0] ? 'background:#111214;color:#fff' : '') + '" data-a="fb" data-v="' + o[0] + '">' + o[1] + '</button>';
-  }).join('');
-  var result = S.ordered ? 'Заказ оформлен' : S.reason ? 'Отказ, ' + S.reason.toLowerCase() : '';
-  var h = '<div class="scroll"><div class="card"><div class="row sb"><span class="ct">BMW X5 · ООО «Вектор»</span>' + chip('пора спросить', TONE.warn) + '</div>' +
-    '<div class="cm">3 варианта от 7 450 000 ₽, отправлено 13 октября</div><div class="g2">' + opts + '</div>';
-  if (S.fb === 'no') h += '<div class="wrap">' + ['Дорого', 'Долго ждать', 'Купил в другом месте', 'Не та комплектация'].map(function (r) {
-    return '<button class="pill soft ' + (S.reason === r ? 'on' : '') + '" data-a="reason" data-v="' + r + '">' + r + '</button>';
+  var keys = Object.keys(S.cls);
+  var cnt = function (f) { return keys.filter(function (k) { return f === 'all' || S.cls[k].status === f; }).length; };
+  var h = '<div class="scroll"><div class="pills">' + [['all', 'Все'], ['search', 'Ищем'], ['think', 'Думает'], ['lost', 'Слился'], ['won', 'Заказал']].map(function (f) {
+    return '<button class="pill ' + (S.clFilter === f[0] ? 'on' : '') + '" data-a="clFilter" data-v="' + f[0] + '">' + f[1] + ' ' + cnt(f[0]) + '</button>';
   }).join('') + '</div>';
-  if (S.fb === 'int' && !S.ordered) h += '<button class="btn b-acc" data-a="order">Оформить заказ</button>';
-  if (S.fb === 'think') h += '<span class="muted">Напомним через ' + days(S.t.client) + '</span>';
-  if (S.fb === 'none') h += '<span class="muted">Перезвонить завтра в 11:00</span>';
-  if (result) h += '<div class="banner" style="background:#E7F6EE;color:#0B6B43;padding:12px 14px">' + ic('check') + '<div>' + result + '</div></div>';
-  h += '</div>';
-  if (S.sent) h += '<div class="card" style="flex-direction:row;align-items:center;gap:12px"><div style="flex:1"><div class="ct">Toyota Camry · Алексей М.</div><div class="cm">Спросим через ' + days(S.t.client) + '</div></div>' + ic('clock', '', 'color:#9A9EA5') + '</div>';
-  h += '<div class="sec-h"><h2>Закрытые</h2></div><div class="card" style="gap:12px">' +
-    [['Mercedes GLE', 'дорого', 'bad'], ['Toyota RAV4', 'заказ', 'good'], ['Kia K5', 'купил в другом месте', 'bad']].map(function (x) {
-      return '<div class="row sb"><span style="font-size:14px">' + x[0] + '</span>' + chip(x[1], TONE[x[2]]) + '</div>';
-    }).join('') + '</div></div>';
-  return h;
+  if (S.cls.bmw.status === 'think' && !S.cls.bmw.snoozed) {
+    h += '<div class="card" style="background:#FFF7EA"><div><b>ООО «Вектор» слился?</b><div class="cm">Думает ' + days(S.cls.bmw.days) + ' по BMW X5, ответа нет</div></div>' +
+      '<div class="g3"><button class="btn b-sm white" data-a="bmwThink">Думает</button><button class="btn b-sm" style="background:#FDECEC;color:#B3261E" data-a="openStatus" data-v="bmw" data-s="lost">Слился</button>' +
+      '<button class="btn b-sm" style="background:#E7F6EE;color:#0B6B43" data-a="openStatus" data-v="bmw" data-s="won">Заказал</button></div></div>';
+  }
+  if (S.sent && S.cls.camry.status === 'think') h += '<div class="card" style="flex-direction:row;align-items:center;gap:12px"><div style="flex:1"><div class="ct">Алексей Морозов</div><div class="cm">Спросим о реакции через ' + days(S.t.client) + '</div></div>' + ic('clock', '', 'color:#9A9EA5') + '</div>';
+  h += '<div class="group">' + keys.filter(function (k) { return S.clFilter === 'all' || S.cls[k].status === S.clFilter; }).map(function (k) {
+    var cl = S.cls[k];
+    return '<button class="li" data-a="openStatus" data-v="' + k + '"><span class="cand-b"><span class="row sb"><span class="ct">' + esc(cl.name) + '</span>' + clientStatusChip(k) + '</span>' +
+      '<span class="cm">' + esc(cl.car) + (cl.status === 'lost' && cl.main ? ', ' + esc(cl.main.toLowerCase()) : '') + '</span></span></button>';
+  }).join('') + '</div>';
+  return h + '</div>';
 }
 
 function vMore() {
@@ -538,44 +774,59 @@ function vMore() {
     '<div class="card" style="gap:12px"><span class="lbl">Устройства</span>' +
     '<div class="row sb"><span style="font-size:14px">Telegram на iPhone</span>' + chip('это устройство', TONE.good) + '</div>' +
     '<div class="row sb"><span style="font-size:14px">Chrome на MacBook</span><span class="cm">вчера</span></div></div>' +
-    '<button class="btn" style="color:#B3261E" data-a="logoutAll">Выйти на всех устройствах</button><button class="btn" data-a="toLogin">Сменить роль</button></div>';
+    '<button class="btn white" style="color:#B3261E" data-a="logoutAll">Выйти на всех устройствах</button><button class="btn white" data-a="toLogin">Сменить роль</button></div>';
 }
 
 function vSettings() {
-  var pills = [['tol', 'Допуски'], ['time', 'Тайминги'], ['rate', 'Курс'], ['team', 'Команда'], ['log', 'Журнал']].map(function (t) {
+  var pills = [['tol', 'Допуски'], ['price', 'Цены'], ['time', 'Тайминги'], ['rate', 'Курс'], ['reasons', 'Причины'], ['kp', 'Бланк КП'], ['team', 'Команда'], ['api', 'API'], ['log', 'Журнал']].map(function (t) {
     return '<button class="pill ' + (S.stab === t[0] ? 'on' : '') + '" data-a="stab" data-v="' + t[0] + '">' + t[1] + '</button>';
   }).join('');
   var seg = function (key, opts) {
     return '<div class="seg">' + opts.map(function (o) { return '<button class="' + (S[key] === o[0] ? 'on' : '') + '" data-a="setv" data-k="' + key + '" data-v="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div>';
   };
-  var h = '<div class="scroll"><div class="pills">' + pills + '</div>';
+  var stepRow = function (a, k, label, val) {
+    return '<div class="row" style="gap:10px;min-height:60px"><span style="flex:1;font-size:14px;font-weight:500">' + label + '</span><div class="step">' +
+      '<button aria-label="Меньше" data-a="' + a + '" data-k="' + k + '" data-v="-1">−</button><span style="min-width:64px;text-align:center;font-weight:600;font-size:14px">' + val + '</span>' +
+      '<button aria-label="Больше" data-a="' + a + '" data-k="' + k + '" data-v="1">+</button></div></div>';
+  };
+  var h = '<div class="scroll" data-k="settings"><div class="pills">' + pills + '</div>';
   if (S.stab === 'tol') {
     h += '<div class="card"><b>Поколение</b>' + seg('genPolicy', [['same', 'Только то же'], ['near', 'И соседнее']]) + '</div>' +
       '<div class="card"><b>Цена к бюджету</b>' + seg('priceMode', [['ceil', 'Потолок'], ['guide', 'Ориентир']]) +
       '<dl class="kv"><dt>Допуск сверху</dt><dd>10%</dd><dt>Год внутри поколения</dt><dd>плюс минус 1</dd><dt>Пробег сверх запроса</dt><dd>20%</dd></dl></div>' +
       '<div class="card" style="gap:12px"><b>Замены цвета</b><div class="row sb" style="font-size:14px"><span>Белый</span><span class="cm">серебристый, серый</span></div>' +
       '<div class="row sb" style="font-size:14px"><span>Чёрный</span><span class="cm">графит, тёмно-синий</span></div><button class="btn b-sm" style="width:100%">Добавить</button></div>' +
-      '<div class="card"><label for="ai" style="font-weight:600">Правила для ИИ</label><textarea id="ai" class="inp" style="min-height:96px;font-size:14px" placeholder="Не предлагать машины после такси"></textarea></div>' +
-      '<div class="card"><b>Обязательные поля</b><div class="wrap">' + ['Имя клиента', 'Контакт', 'Модель', 'Бюджет'].map(function (x) { return chip(x, 'background:#111214;color:#fff'); }).join('') +
-      chip('Цвет', TONE.muted) + chip('Комплектация', TONE.muted) + '</div></div>';
+      '<div class="card"><label for="ai" style="font-weight:600">Правила для ИИ</label><textarea id="ai" class="inp" style="min-height:96px;font-size:14px" placeholder="Не предлагать машины после такси"></textarea></div>';
+  } else if (S.stab === 'price') {
+    h += '<div class="card" style="gap:4px;padding:8px 16px"><div class="row sb" style="min-height:60px"><span style="font-size:14px;font-weight:500">Ниже себестоимости</span>' + chip('нельзя всегда', TONE.bad) + '</div>' +
+      stepRow('bumpRule', 'median', 'Ниже медианы рынка больше чем на', S.rule.median + '%') +
+      stepRow('bumpRule', 'margin', 'Маржа от закупки меньше', S.rule.margin + '%') + '</div>' +
+      '<span class="muted" style="padding:0 4px">Если сработало правило, цену подтверждает владелец</span>';
   } else if (S.stab === 'time') {
     var T = S.t;
-    h += '<div class="card" style="gap:4px;padding:8px 16px">' + [['sup', 'Напомнить поставщику', T.sup + ' ч'], ['alarm', 'Тревога менеджеру', T.alarm + ' ч'], ['client', 'Спросить о клиенте', days(T.client)], ['fresh', 'Свежесть прошлых', days(T.fresh)]].map(function (x) {
-      return '<div class="row" style="gap:10px;min-height:60px"><span style="flex:1;font-size:14px;font-weight:500">' + x[1] + '</span><div class="step">' +
-        '<button aria-label="Меньше" data-a="bump" data-k="' + x[0] + '" data-v="-1">−</button><span style="min-width:60px;text-align:center;font-weight:600;font-size:14px">' + x[2] + '</span>' +
-        '<button aria-label="Больше" data-a="bump" data-k="' + x[0] + '" data-v="1">+</button></div></div>';
-    }).join('') + '</div>';
+    h += '<div class="card" style="gap:4px;padding:8px 16px">' +
+      stepRow('bump', 'sup', 'Напомнить поставщику', T.sup + ' ч') + stepRow('bump', 'alarm', 'Тревога менеджеру', T.alarm + ' ч') +
+      stepRow('bump', 'client', 'Спросить о реакции', days(T.client)) + stepRow('bump', 'lost', 'Спросить «Слился?»', days(T.lost)) +
+      stepRow('bump', 'fresh', 'Свежесть прошлых сделок', days(T.fresh)) + '</div>';
   } else if (S.stab === 'rate') {
     h += '<div class="card" style="gap:6px;padding:8px">' + [['pct', 'ЦБ плюс процент', '2%'], ['fix', 'ЦБ плюс рубли', '1,50 ₽ на ¥100'], ['date', 'Фиксированный курс', '¥ 0,5800 до 31 октября']].map(function (r) {
       var on = S.rateRule === r[0];
       return '<button class="cand" style="' + (on ? 'background:#F4F6FF' : '') + '" data-a="setv" data-k="rateRule" data-v="' + r[0] + '"><span class="radio ' + (on ? 'on' : '') + '"></span>' +
-        '<div class="cand-b"><div style="font-weight:600;font-size:14px">' + r[1] + '</div><div class="cm">' + r[2] + '</div></div></button>';
-    }).join('') + '</div>' +
-      '<div class="card"><dl class="kv"><dt>Комиссия</dt><dd>100 000 ₽</dd><dt>Тарифы</dt><dd>v14 с 1 октября</dd></dl></div>' +
-      '<div class="sec-h"><h2>История</h2></div><div class="card" style="gap:12px">' +
-      [['ЦБ плюс 2%', '1 октября'], ['Тарифы утильсбора v14', '1 октября'], ['Комиссия 100 000 ₽', '12 августа']].map(function (x) {
-        return '<div class="row sb" style="font-size:14px"><span>' + x[0] + '</span><span class="cm">' + x[1] + '</span></div>';
-      }).join('') + '</div>';
+        '<span class="cand-b"><span style="font-weight:600;font-size:14px">' + r[1] + '</span><span class="cm">' + r[2] + '</span></span></button>';
+    }).join('') + '</div><div class="card"><dl class="kv"><dt>Комиссия</dt><dd>100 000 ₽</dd><dt>Тарифы</dt><dd>v14 с 1 октября</dd></dl></div>';
+  } else if (S.stab === 'reasons') {
+    h += S.groups.map(function (g) {
+      return '<div class="card" style="gap:10px"><b>' + g[0] + '</b><div class="wrap">' + g[1].map(function (r) { return chip(r, TONE.muted); }).join('') + '</div></div>';
+    }).join('') +
+      '<div class="card"><div class="field"><label for="nr">Новая причина в группу Клиент</label><input id="nr" class="inp" data-in="newReason" value="' + esc(S.newReason) + '" placeholder="Переехал в другой город"></div>' +
+      '<button class="btn b-pri b-sm" style="width:100%" data-a="addReason">Добавить</button></div>';
+  } else if (S.stab === 'kp') {
+    h += '<button class="card" style="border:0;cursor:pointer;align-items:center;padding:28px 16px;background:#fff;font-family:inherit" data-a="toast" data-v="Бланк загружен">' + ic('download', 'i-l', 'color:#2B59FF;transform:rotate(180deg)') +
+      '<b>Загрузить бланк</b><span class="cm">PDF или картинка</span></button>' +
+      '<div class="card">' + [['Название', '[Название дилера]'], ['ИНН', '[0000000000]'], ['Адрес', '[Город, улица, дом]'], ['Телефон', '[+7 000 000 00 00]']].map(function (f, i) {
+        return '<div class="field"><label for="kp' + i + '">' + f[0] + '</label><input id="kp' + i + '" class="inp" placeholder="' + f[1] + '"></div>';
+      }).join('') + '</div>' +
+      '<div class="card" style="gap:4px;padding:8px 16px">' + stepRow('bumpKp', 'kp', 'Срок действия цены', days(S.kpDays)) + '</div>';
   } else if (S.stab === 'team') {
     h += '<button class="btn b-acc">Пригласить менеджера</button>' + [['mk', 'Марина Кравец', 'МК', 'Импорт', 3], ['os', 'Олег Сафин', 'ОС', 'Импорт', 5], ['al', 'Артём Лим', 'АЛ', 'Авто в РФ', 2]].map(function (m) {
       var gone = S.excluded.indexOf(m[0]) >= 0, conf = !gone && S.excluding === m[0];
@@ -585,10 +836,18 @@ function vSettings() {
         (conf ? '<div class="muted" style="color:#8C1D18">Доступ закроется на всех устройствах, запросы перейдут Олегу Сафину</div><div class="g2">' +
           '<button class="btn b-sm" data-a="exclCancel">Отмена</button><button class="btn b-sm" style="background:#B3261E;color:#fff" data-a="exclDo" data-v="' + m[0] + '" data-n="' + m[1] + '">Исключить</button></div>' : '') + '</div>';
     }).join('') + '<div class="card"><b>Контакты поставщиков видит</b>' + seg('visibility', [['platform', 'Только платформа'], ['owner', 'И владелец']]) + '</div>';
+  } else if (S.stab === 'api') {
+    h += '<div class="card"><div class="row sb"><b>Ключ API</b>' + chip('активен', TONE.good) + '</div>' +
+      '<div style="background:#F4F4F6;border-radius:14px;padding:14px 16px;font-size:15px;letter-spacing:.04em">pk_live_••••••••7f3a</div>' +
+      '<div class="g2"><button class="btn b-sm" data-a="toast" data-v="Ключ скопирован">' + ic('copy', 'i-s') + 'Скопировать</button><button class="btn b-sm" data-a="toast" data-v="Выпущен новый ключ, старый отключён">' + ic('key', 'i-s') + 'Новый ключ</button></div></div>' +
+      '<div class="card" style="gap:10px"><b>Уведомления в CRM</b>' + ['Смена статуса клиента', 'Отправка предложения', 'Заказал или слился'].map(function (x) {
+        return '<div class="row sb" style="font-size:14px"><span>' + x + '</span>' + chip('включено', TONE.good) + '</div>';
+      }).join('') + '</div>' +
+      '<button class="btn white sb" data-a="statShare">Участвовать в обезличенной статистике<span class="switch ' + (S.statShare ? 'on' : '') + '"><span></span></span></button>';
   } else {
-    h += [['Запрос поставщикам', 'снято', 'warn', 'Номер продавца, не клиента', '16 октября, 11:02'], ['Текст клиенту', 'отклонено', 'bad', 'В тексте был WeChat поставщика', '14 октября, 17:45'], ['Запрос поставщикам', 'снято', 'warn', 'Имя совпало с названием комплектации', '2 октября, 09:18']].map(function (l) {
-      return '<div class="card" style="gap:4px"><div class="row sb"><span class="ct" style="font-size:14px">' + l[0] + '</span>' + chip(l[1], TONE[l[2]]) + '</div>' +
-        '<div style="font-size:13px">' + l[3] + '</div><div class="cm" style="font-size:12px">' + l[4] + '</div></div>';
+    h += S.log.map(function (l) {
+      return '<div class="card" style="gap:4px"><div class="row sb"><span class="ct" style="font-size:14px">' + esc(l[0]) + '</span>' + chip(l[1], TONE[l[2]]) + '</div>' +
+        '<div style="font-size:13px">' + esc(l[3]) + '</div><div class="cm" style="font-size:12px">' + esc(l[4]) + '</div></div>';
     }).join('');
   }
   return h + '</div>';
@@ -607,39 +866,61 @@ function vSupplier() {
   return h + '</div>';
 }
 
-var VIEWS = { login: vLogin, list: vList, newreq: vNew, supcheck: vSupcheck, card: vCard, compare: vCompare, offer: vOffer, calls: vCalls, reply: vReply, client: vClient, feedback: vFeedback, more: vMore, settings: vSettings, supplier: vSupplier };
+var VIEWS = { login: vLogin, list: vList, lead: vLead, newreq: vNew, supcheck: vSupcheck, card: vCard, offer: vOffer, approve: vApprove, calls: vCalls, reply: vReply, client: vClient, status: vStatus, feedback: vFeedback, more: vMore, settings: vSettings, supplier: vSupplier };
 
 /* ---------- рендер ---------- */
-var lastScreen = null;
-function render() {
-  var sc = app.querySelector('.scroll');
-  var keep = sc && lastScreen === S.screen ? sc.scrollTop : 0;
+function header(screen, hasBack) {
   var owner = S.role === 'owner';
-  var m = META[S.screen] || ['', ''];
-  if (S.screen === 'list') m = ['Запросы', owner ? 'Все менеджеры' : ''];
-  if (S.screen === 'offer') m = [BY[S.sel].car, BY[S.sel].term];
+  var m = META[screen] || ['', ''];
+  if (screen === 'list') m = ['Запросы', owner ? 'Все менеджеры' : ''];
+  if (screen === 'offer') m = [BY[S.sel].car, BY[S.sel].src];
+  if (screen === 'card') m = ['Toyota Camry', 'Создан сегодня в 10:12'];
+  if (screen === 'status') m = ['Статус клиента', S.cls[S.stKey].car];
+  return '<header class="top">' + (hasBack ? '<button class="ib" aria-label="Назад" data-a="back">' + ic('back') + '</button>' : '') +
+    '<div class="top-t"><h1>' + esc(m[0]) + '</h1>' + (m[1] ? '<p>' + esc(m[1]) + '</p>' : '') + '</div>' +
+    (screen === 'list' ? '<button class="ib" aria-label="Поиск">' + ic('search') + '</button>' : '') +
+    (screen === 'supplier' ? '<button class="ib" aria-label="Выйти" data-a="toLogin">' + ic('out') + '</button>' : '') + '</header>';
+}
+function tabsBar() {
+  var owner = S.role === 'owner';
+  var tabs = owner ? [['list', 'Запросы', 'list'], ['feedback', 'Клиенты', 'users'], ['settings', 'Настройки', 'sliders'], ['more', 'Профиль', 'user']]
+    : [['list', 'Запросы', 'list'], ['calls', 'Обзвон', 'phone'], ['feedback', 'Клиенты', 'users'], ['more', 'Профиль', 'user']];
+  var cur = S.stack.length ? S.stack[0] : S.screen;
+  return '<nav class="tabs" aria-label="Разделы">' + tabs.map(function (t) {
+    return '<button class="tab ' + (cur === t[0] ? 'on' : '') + '" data-a="tab" data-v="' + t[0] + '">' + ic(t[2]) + '<span>' + t[1] + '</span></button>';
+  }).join('') + '</nav>';
+}
+function render() {
+  var keep = {};
+  app.querySelectorAll('.scroll').forEach(function (el) { keep[el.dataset.k || S.lastScreen] = el.scrollTop; });
+  var wide = isWide() && S.screen !== 'login' && S.screen !== 'supplier';
+  app.classList.toggle('wide', wide);
   var h = '';
-  if (S.screen !== 'login') {
-    h += '<header class="top">' + (S.stack.length ? '<button class="ib" aria-label="Назад" data-a="back">' + ic('back') + '</button>' : '') +
-      '<div class="top-t"><h1>' + esc(m[0]) + '</h1>' + (m[1] ? '<p>' + esc(m[1]) + '</p>' : '') + '</div>' +
-      (S.screen === 'list' ? '<button class="ib" aria-label="Поиск">' + ic('search') + '</button>' : '') +
-      (S.screen === 'supplier' ? '<button class="ib" aria-label="Выйти" data-a="toLogin">' + ic('out') + '</button>' : '') + '</header>';
+  if (S.screen === 'login') h = VIEWS.login();
+  else if (S.screen === 'supplier') h = header('supplier', false) + vSupplier();
+  else if (wide) {
+    h = '<div class="pane left">' + header('list', false) + vList() + tabsBar() + '</div><div class="pane right">';
+    if (S.screen === 'list') h += '<div class="empty">' + ic('car', 'i-l') + '<b style="color:#111214">Откройте запрос слева</b></div>';
+    else {
+      var back = S.stack.length > 0 && !(S.stack.length === 1 && S.stack[0] === 'list');
+      h += header(S.screen, back) + VIEWS[S.screen]().replace('class="scroll"', 'class="scroll" data-k="R' + S.screen + '"') + (S.screen === 'card' ? '<div class="dock-wrap">' + dockCard() + '</div>' : '');
+    }
+    h += '</div>';
+  } else {
+    h = header(S.screen, S.stack.length > 0) + VIEWS[S.screen]();
+    if (S.screen === 'card') h += dockCard();
+    else if (!S.stack.length) h += tabsBar();
   }
-  h += VIEWS[S.screen]();
-  if (S.screen !== 'login' && S.screen !== 'supplier' && !S.stack.length) {
-    var tabs = owner ? [['list', 'Запросы', 'list'], ['feedback', 'Клиенты', 'msg'], ['settings', 'Настройки', 'sliders'], ['more', 'Профиль', 'user']]
-      : [['list', 'Запросы', 'list'], ['calls', 'Обзвон', 'phone'], ['feedback', 'Клиенты', 'msg'], ['more', 'Профиль', 'user']];
-    h += '<nav class="tabs" aria-label="Разделы">' + tabs.map(function (t) {
-      return '<button class="tab ' + (S.screen === t[0] ? 'on' : '') + '" data-a="tab" data-v="' + t[0] + '">' + ic(t[2]) + '<span>' + t[1] + '</span></button>';
-    }).join('') + '</nav>';
-  }
-  if (S.toast) h += '<div class="toast" role="status">' + ic('check', 'i-s') + '<span>' + esc(S.toast) + '</span></div>';
+  if (S.toast) h += '<div class="toast" role="status" aria-live="polite">' + ic('check', 'i-s') + '<span>' + esc(S.toast) + '</span></div>';
   app.innerHTML = h;
-  var nsc = app.querySelector('.scroll');
-  if (nsc && keep) nsc.scrollTop = keep;
-  lastScreen = S.screen;
+  app.querySelectorAll('.scroll').forEach(function (el) {
+    var k = el.dataset.k;
+    if (k && keep[k] && (k === 'list' || k === 'settings' || S.lastScreen === S.screen)) el.scrollTop = keep[k];
+  });
+  S.lastScreen = S.screen;
   bindSwipe();
 }
+window.addEventListener('resize', function () { var w = isWide(); if (w !== S.wasWide) { S.wasWide = w; render(); } });
 
 /* ---------- свайп ---------- */
 function bindSwipe() {
@@ -673,9 +954,10 @@ function fly(dir, r) {
   var el = document.getElementById('sw');
   if (el) { el.classList.remove('drag'); el.style.transform = 'translateX(' + (dir * 520) + 'px) rotate(' + (dir * 20) + 'deg)'; }
   later(function () {
-    var id = CALL_IDS[S.callIdx], cr = Object.assign({}, S.callRes);
+    var id = CALL_IDS[S.callIdx], cr = Object.assign({}, S.callRes), pk = Object.assign({}, S.picked);
     cr[id] = r;
-    set({ callRes: cr, callIdx: S.callIdx + 1, hist: S.hist.concat([id]), mm: '', mmFields: [], fixVals: {}, callNote: '' });
+    if (r.r === 'hard' || r.r === 'fake') delete pk[id];
+    set({ callRes: cr, picked: pk, callIdx: S.callIdx + 1, hist: S.hist.concat([id]), mm: '', mmFields: [], fixVals: {}, callNote: '' });
   }, 240);
 }
 function swipe(dir) {
@@ -684,15 +966,16 @@ function swipe(dir) {
   else set({ mm: 'what', mmFields: [], fixVals: {}, callNote: '' });
 }
 
-/* ---------- поиск с подгрузкой ---------- */
 function startSearch() {
-  if (!S.cleaned) { say('Сначала уберите данные клиента'); return; }
-  set({ screen: 'card', stack: ['list'], supArrived: 0, stockOn: false, marketOn: false });
+  var cls = Object.assign({}, S.cls); cls.camry = Object.assign({}, cls.camry, { status: 'search' });
+  S.log = [['Запрос поставщикам', 'удалено', 'info', 'Имя и телефон клиента', 'сегодня, 10:14']].concat(S.log);
+  set({ cls: cls, screen: 'card', stack: ['list'], supArrived: 0, stockOn: false, marketOn: false, picked: {}, open: {}, sent: false });
   later(function () { set({ stockOn: true }); }, 900);
   later(function () { set({ marketOn: true }); }, 1800);
   later(function () { set({ supArrived: 1 }); say('Ответил П-07'); }, 3200);
   later(function () { set({ supArrived: 2 }); say('Ответил П-03'); }, 6000);
 }
+function setCl(key, patch) { var cls = Object.assign({}, S.cls); cls[key] = Object.assign({}, cls[key], patch); S.cls = cls; }
 
 /* ---------- действия ---------- */
 var A = {
@@ -710,19 +993,43 @@ var A = {
   toLogin: function () { set({ screen: 'login', stack: [], loginStep: 0, code: '' }); },
   logoutAll: function () { set({ screen: 'login', stack: [], loginStep: 0, code: '' }); say('Вы вышли на всех устройствах'); },
   filter: function (v) { set({ listFilter: v }); },
-  openCard: function () { go('card'); },
+  clFilter: function (v) { set({ clFilter: v }); },
+  openCard: function () { if (isWide()) set({ screen: 'card', stack: ['list'] }); else go('card'); },
   demoOnly: function () { say('В демо открыт только Toyota Camry'); },
-  goNew: function () { go('newreq', { parsed: false, trim: '', cleaned: false }); },
+  goLead: function () { if (isWide()) set({ screen: 'lead', stack: ['list'], leadParsed: false }); else go('lead', { leadParsed: false }); },
+  leadMode: function (v) { set({ leadMode: v }); },
+  leadParse: function () { set({ leadParsed: true }); },
+  anketa: function () { set({ anketa: !S.anketa }); },
+  leadCreate: function () { go('newreq', { parsed: false, trim: '' }); say('Лид создан, клиент Алексей Морозов'); },
   rec: function () { set({ recording: !S.recording }); },
   parse: function () { set({ parsed: true, recording: false }); },
   trim: function (v) { set({ trim: v === 'Любая' ? 'любая' : v }); },
-  clean: function () { set({ cleaned: true }); },
-  unblock: function () { say('Запрос ушёл владельцу'); },
   sendSup: startSearch,
   callClient: function () { say('Звонок клиенту'); },
   remind: function (v) { say('Напоминание отправлено ' + v); },
+  deals: function () { set({ deals: !S.deals }); },
+  fold: function (v) { var f = Object.assign({}, S.fold); f[v] = !f[v]; set({ fold: f }); },
+  jump: function (v) {
+    if (v === 'picked') { if (pickedList().length) A.toClient(); else say('Отметьте варианты галочкой'); return; }
+    var f = Object.assign({}, S.fold); f[v] = false; set({ fold: f });
+    var el = document.getElementById('sec-' + v); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
+  pick: function (v) { var p = Object.assign({}, S.picked); if (p[v]) delete p[v]; else { p[v] = true; pr(v); } set({ picked: p }); },
+  expand: function (v) { var o = Object.assign({}, S.open); o[v] = !o[v]; pr(v); set({ open: o }); },
+  detail: function (v) { set({ detail: v === '1' }); },
   offer: function (v) { go('offer', { sel: v }); },
-  toggleInClient: function () { var ic2 = Object.assign({}, S.inClient); ic2[S.sel] = !ic2[S.sel]; set({ inClient: ic2 }); },
+  askApprove: function (v) { var p = pr(v); p.appr = 'pending'; p.apprV = p.v; p.hist.push([p.v, 'запрос подтверждения', 'Марина К.']); render(); say('Запрос ушёл владельцу'); },
+  approve: function (v) { var p = pr(v); p.appr = 'ok'; p.hist.push([p.v, 'подтверждено', 'Владелец']); S.log = [['Цена клиенту', 'подтверждено', 'good', BY[v].car + ', ' + rub(p.v), 'сегодня']].concat(S.log); render(); say('Цена подтверждена'); },
+  reject: function (v) { var p = pr(v); p.appr = 'rejected'; p.hist.push([p.v, 'отклонено', 'Владелец']); render(); say('Цена отклонена'); },
+  toClient: function () { if (!pickedList().length) { say('Отметьте варианты галочкой'); return; } go('client'); },
+  sendMode: function (v) { set({ sendMode: v }); },
+  markSent: function () {
+    var bl = pickedList().filter(function (c) { return !sendable(c.id); });
+    if (bl.length) { say('Сначала подтвердите цену'); return; }
+    setCl('camry', { status: 'think' });
+    set({ sent: true, kpVer: S.sendMode === 'kp' ? S.kpVer + 1 : S.kpVer });
+  },
+  backToCard: function () { back(); },
   phone: function () { say('Открываем звонилку'); },
   callOk: function () { swipe('ok'); },
   callNo: function () { swipe('no'); },
@@ -733,11 +1040,7 @@ var A = {
     set({ mmFields: f });
   },
   mmCancel: function () { set({ mm: '', mmFields: [] }); },
-  mmNext: function () {
-    if (!S.mmFields.length) return;
-    if (S.mmFields.indexOf('fake') >= 0) fly(-1, { r: 'fake', note: '' });
-    else set({ mm: 'how' });
-  },
+  mmNext: function () { if (!S.mmFields.length) return; if (S.mmFields.indexOf('fake') >= 0) fly(-1, { r: 'fake', note: '' }); else set({ mm: 'how' }); },
   mmHard: function () { fly(-1, { r: 'hard', note: mmNote('hard') }); },
   mmSoft: function () { set({ mm: 'fix' }); },
   mmSave: function () { fly(-1, { r: 'soft', note: mmNote('soft') }); },
@@ -749,24 +1052,49 @@ var A = {
     set({ hist: h, callRes: cr, callIdx: S.callIdx - 1, mm: '' });
   },
   confirmReply: function () { back(); say('П-07 добавлен в подбор'); },
-  askSupplier: function () { say('Вопрос уйдёт через бота'); },
   toast: function (v) { say(v); },
-  markSent: function () { set({ sent: true }); },
-  fb: function (v) { set({ fb: v, reason: '', ordered: false }); },
-  reason: function (v) { set({ reason: v }); },
-  order: function () { set({ ordered: true }); },
+  openStatus: function (v, el) {
+    var cl = S.cls[v];
+    var d = { status: (el && el.dataset.s) || cl.status, reasons: cl.reasons.slice(), main: cl.main, note: cl.note };
+    go('status', { stKey: v, draft: d });
+  },
+  stPick: function (v) { S.draft.status = v; render(); },
+  stReason: function (v) {
+    var d = S.draft, i = d.reasons.indexOf(v);
+    if (i >= 0) d.reasons.splice(i, 1); else d.reasons.push(v);
+    if (d.reasons.indexOf(d.main) < 0) d.main = d.reasons[0] || '';
+    render();
+  },
+  stMain: function (v) { S.draft.main = v; render(); },
+  stSave: function () {
+    var d = S.draft;
+    if (d.status === 'lost' && !d.reasons.length) { say('Выберите причину'); return; }
+    setCl(S.stKey, { status: d.status, reasons: d.status === 'lost' ? d.reasons : [], main: d.status === 'lost' ? d.main : '', note: d.note });
+    back();
+    say(d.status === 'won' ? 'Заказ создан' : 'Статус ' + CST[d.status][0]);
+  },
   stab: function (v) { set({ stab: v }); },
   setv: function (v, el) { var p = {}; p[el.dataset.k] = v; set(p); },
   bump: function (v, el) {
     var k = el.dataset.k, d = +v;
-    var lim = { sup: [1, 24], alarm: [2, 48], client: [1, 14], fresh: [15, 360] }[k], step = k === 'fresh' ? 15 : 1;
+    var lim = { sup: [1, 24], alarm: [2, 48], client: [1, 14], lost: [1, 30], fresh: [15, 360] }[k], step = k === 'fresh' ? 15 : 1;
     var t = Object.assign({}, S.t); t[k] = Math.max(lim[0], Math.min(lim[1], t[k] + d * step)); set({ t: t });
   },
+  bumpRule: function (v, el) { var r = Object.assign({}, S.rule); r[el.dataset.k] = Math.max(0, Math.min(30, r[el.dataset.k] + (+v))); set({ rule: r }); },
+  bumpKp: function (v) { set({ kpDays: Math.max(1, Math.min(30, S.kpDays + (+v))) }); },
+  addReason: function () {
+    var r = S.newReason.trim(); if (!r) return;
+    var g = S.groups.map(function (x) { return [x[0], x[1].slice()]; }); g[g.length - 1][1].splice(g[g.length - 1][1].length - 1, 0, r);
+    set({ groups: g, newReason: '' }); say('Причина добавлена');
+  },
+  statShare: function () { set({ statShare: !S.statShare }); },
   exclAsk: function (v) { set({ excluding: v }); },
   exclCancel: function () { set({ excluding: '' }); },
   exclDo: function (v, el) { set({ excluding: '', excluded: S.excluded.concat([v]) }); say(el.dataset.n + ' исключён'); },
   sup: function (v) { set({ supStep: +v }); }
 };
+A.bmwThink = function () { setCl('bmw', { snoozed: true }); say('Спросим ещё раз через ' + days(S.t.lost)); };
+
 app.addEventListener('click', function (e) {
   var el = e.target.closest('[data-a]');
   if (!el) return;
@@ -789,11 +1117,19 @@ app.addEventListener('input', function (e) {
     box.insertAdjacentHTML('afterbegin', cellsHtml());
     document.getElementById('confirmBtn').className = 'btn ' + (S.code.length === 6 ? 'b-acc' : 'b-off');
     if (S.code.length === 6) later(function () { set({ screen: 'list', stack: [], loginStep: 0, code: '' }); }, 350);
-  } else if (k === 'dictation') S.dictation = t.value;
-  else if (k === 'fix') S.fixVals[t.dataset.k] = t.value;
-  else if (k === 'note') S.callNote = t.value;
+  } else if (k === 'price') {
+    var digits = t.value.replace(/\D/g, '');
+    var p = pr(S.sel); p.v = +digits || 0;
+    var pos = t.value.length - t.selectionStart;
+    t.value = digits ? num(p.v) : '';
+    try { var np = Math.max(0, t.value.length - pos); t.setSelectionRange(np, np); } catch (err) {}
+    document.getElementById('priceInfo').innerHTML = priceInfo(BY[S.sel]);
+  } else if (k === 'fix') S.fixVals[t.dataset.k] = t.value;
+  else if (k === 'stNote') S.draft.note = t.value;
+  else S[k] = t.value;
 });
 
+S.wasWide = isWide();
 render();
 })();
 </script>
