@@ -1,0 +1,6 @@
+# Настройки для Supabase CLI. project_id подставить свой (Project Settings → General → Reference ID).
+project_id = "lobzdwuqyylthmhsgucd"
+
+[functions.api]
+# Шлюз требует публичный ключ проекта, его шлёт фронт. Доступ проверяет функция по initData от Telegram.
+verify_jwt = true
