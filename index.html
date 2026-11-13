@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="var(--background)">
 <title>Подбор</title>
-<meta name="podbor-version" content="2026-11-13-workspace-v2">
+<meta name="podbor-version" content="2026-11-13-crm-v1">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script defer src="assets/pdf-lib.min.js"></script>
 <script defer src="assets/fontkit.umd.min.js"></script>
@@ -377,7 +377,7 @@ function call(action, payload) {
     .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error(j.error || ('HTTP ' + r.status)); e.code = j.error || 'http'; throw e; } return j; }); });
 }
 function errText(e) {
-  return ({ forbidden: 'Нет прав на это', self: 'Себя нельзя выключить, понизить или удалить', exists: 'Этот ID уже есть в списке', bad_id: 'Telegram ID это число из цифр', bad_name: 'Впишите имя', workspace_too_large: 'Превышен общий объём данных. Уменьшите размер бланка', db_workspace_failed: 'Сервер не смог сохранить или прочитать данные. Повторите позже', bad_workspace: 'Не удалось проверить формат сохраняемых данных', bad_init_data: 'Telegram не подтвердил вход, откройте приложение заново' })[e.code] || 'Не получилось: ' + e.message;
+  return ({ forbidden: 'Нет прав на это', self: 'Себя нельзя выключить, понизить или удалить', exists: 'Этот ID уже есть в списке', bad_id: 'Telegram ID это число из цифр', bad_name: 'Впишите имя', desktop_db: 'Не удалось подготовить вход. Повторите позже', crm_db: 'Не удалось обратиться к CRM. Повторите позже', crm_conflict: 'Заявку уже изменили. Обновите список и повторите действие', crm_duplicate: 'У клиента уже есть активная заявка. Найдите её по телефону', crm_bad_data: 'Проверьте заполненные поля заявки', crm_not_found: 'Заявка недоступна. Обновите список', crm_reason_required: 'Укажите причину отказа', crm_comment_required: 'Для Другое нужен комментарий', workspace_too_large: 'Превышен общий объём данных. Уменьшите размер бланка', db_workspace_failed: 'Сервер не смог сохранить или прочитать данные. Повторите позже', bad_workspace: 'Не удалось проверить формат сохраняемых данных', bad_init_data: 'Telegram не подтвердил вход, откройте приложение заново' })[e.code] || 'Не получилось: ' + e.message;
 }
 function fromRow(r) {
   return { id: String(r.tg_id), name: r.name, role: r.role, on: !!r.active, added: r.created_at ? new Date(r.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '') : '' };
@@ -401,7 +401,7 @@ function enterOnline() {
   S.tg = TG.initDataUnsafe && TG.initDataUnsafe.user || null;
   call('me').then(function (j) {
     S.me = fromRow(j.me); S.role = S.me.role; restoreDemoSettings(); applyMocks(j.mocks || []); loadRequests();
-    return loadWorkspace().then(function () { S.screen = homeOf(S.role); S.stack = []; if (S.role === 'admin' || S.role === 'owner') return refreshUsers(); });
+    return loadWorkspace().then(function () { return loadCrmRequests(); }).then(function () { S.screen = homeOf(S.role); S.stack = []; if (S.role === 'admin' || S.role === 'owner') return refreshUsers(); });
   }).catch(function (e) {
     S.me = null; S.screen = 'noaccess';
     if (e.code !== 'no_access') S.bootErr = errText(e);
@@ -591,7 +591,7 @@ function vList() {
     var active = isWide() && r.live && S.screen !== 'list' && S.stack.indexOf('list') >= 0;
     return '<button class="li' + (active ? ' active' : '') + '" data-a="' + (r.live ? 'openCard' : 'openRequest') + '" data-v="' + esc(r.key) + '"><span class="cand-b" style="gap:2px">' +
       '<span class="row sb"><span class="ct">' + esc(r.title) + (r.custom ? '' : ' · пример') + '</span><span class="cm" style="font-size:12px">' + esc(r.when) + '</span></span>' +
-      '<span class="cm">' + esc(cl.name) + (owner ? ', ' + esc(r.mgr) : '') + '</span>' +
+      '<span class="cm">' + esc(cl.name) + (owner || r.crmId ? ', ' + esc(r.mgr) : '') + '</span>' +
       '<span class="row" style="gap:6px;padding-top:6px">' + clientStatusChip(r.key) + chip(search[0], TONE[search[1]]) + '</span></span></button>';
   }).join('');
   var pend = pendingList();
@@ -602,8 +602,9 @@ function vList() {
       ? '<button class="banner" style="background:var(--warning-soft);color:var(--warning-strong);align-items:center;cursor:pointer" data-a="tab" data-v="feedback">' + ic('bell') +
         '<div style="flex:1"><b>ООО «Вектор» слился?</b><p>Думает ' + days(S.cls.bmw.days) + ' по BMW X5</p></div>' + ic('next', 'i-s') + '</button>' : '';
   return '<div class="scroll" data-k="list">' +
+    (online() && S.me && S.me.role !== 'supplier' ? '<div class="row sb"><span class="cm">CRM компании · ' + (S.crmTotal || 0) + ' заявок</span><button class="btn b-sm" data-a="refreshCrm">Обновить</button></div>' : '') +
     (S.searchOpen ? '<div class="field"><label for="requestSearch">Найти запрос</label><input id="requestSearch" class="inp" data-in="searchQuery" value="' + esc(S.searchQuery) + '" placeholder="Модель, клиент или телефон"></div>' : '') + banner +
-    '<div class="pills">' + pills + '</div>' + (items ? '<div class="group">' + items + '</div>' : '<div class="card" style="align-items:center;padding:24px"><span class="cm">В этом статусе запросов нет</span></div>') + '</div>';
+    '<div class="pills">' + pills + '</div>' + (items ? '<div class="group">' + items + '</div>' : '<div class="card" style="align-items:center;padding:24px"><span class="cm">В этом статусе запросов нет</span></div>') + (online() && ((S.crmPage || 0) + 1) * 100 < (S.crmTotal || 0) ? '<button class="btn white" data-a="moreCrm">Ещё заявки CRM</button>' : '') + '</div>';
 }
 
 function requestField(id, label, key, placeholder, type) {
@@ -614,7 +615,7 @@ function vLead() {
   if (S.leadMode === 'quick') h += '<div class="card"><label for="lt" class="lbl">Сообщение клиента</label><textarea id="lt" class="inp" data-in="leadText">' + esc(S.leadText) + '</textarea><span class="cm">Исходное сообщение сохранится в запросе. Заполните и проверьте поля ниже. Автоматический ИИ-разбор ещё не подключён.</span></div>';
   h += '<div class="card">' + requestField('fn', 'Имя клиента', 'fName', 'Имя клиента') + requestField('fp', 'Телефон', 'fPhone', '+7 900 000 00 00', 'tel') + '</div>';
   h += '<div class="card">' + requestField('fm', 'Марка и модель', 'fModel', 'Toyota Camry') + requestField('fg', 'Поколение', 'fGeneration', 'XV70, либо уточнить') + requestField('fy', 'Годы', 'fYears', '2021-2023') + requestField('fk', 'Максимальный пробег, км', 'fMileage', '60000', 'number') + requestField('fb', 'Бюджет, ₽', 'fBudget', '3200000', 'number') + requestField('fc', 'Цвет и комплектация', 'fSpec', 'Белый, Prestige') + '</div>' + anketa();
-  h += '<button class="btn white sb" data-a="leadConsent" aria-pressed="' + !!S.fConsent + '">Согласие на обработку данных<span>' + (S.fConsent ? 'Получено' : 'Не отмечено') + '</span></button><p class="cm">' + (online() ? 'Запрос сохраняется в Supabase для вашей учётной записи и доступен на других ваших устройствах.' : 'Вы в браузерном демо. Запрос сохранится только на этом устройстве.') + '</p><button class="btn b-acc" data-a="leadCreate">Создать запрос</button></div>';
+  h += '<button class="btn white sb" data-a="leadConsent" aria-pressed="' + !!S.fConsent + '">Согласие на обработку данных<span>' + (S.fConsent ? 'Получено' : 'Не отмечено') + '</span></button><p class="cm">' + (online() ? 'Заявка сохраняется в общей CRM компании. Ответственным будете назначены вы.' : 'Вы в браузерном демо. Запрос сохранится только на этом устройстве.') + '</p><button class="btn b-acc" data-a="leadCreate">Создать запрос</button></div>';
   return h;
 }
 function customKey() { return 'podbor-requests-v3-' + (S.me ? S.me.id : 'browser-demo'); }
@@ -635,7 +636,7 @@ function vRequest() {
   var r = REQS.filter(function (r) { return r.key === S.requestKey; })[0];
   if (!r) return '<div class="scroll"><div class="card">Запрос не найден</div></div>';
   var c = S.cls[r.key];
-  return '<div class="scroll"><div class="card"><h2>' + esc(r.title) + '</h2><span class="cm">' + esc(c.name) + '</span>' + clientStatusChip(r.key, true) + '<dl class="kv"><dt>Телефон</dt><dd>' + esc(c.phone || 'Не указан') + '</dd><dt>Поколение</dt><dd>' + esc(r.generation || 'Уточнить') + '</dd><dt>Годы</dt><dd>' + esc(r.years || 'Уточнить') + '</dd><dt>Пробег</dt><dd>' + esc(r.mileage || 'Уточнить') + '</dd><dt>Бюджет</dt><dd>' + (r.budget ? rub(r.budget) : 'Уточнить') + '</dd><dt>Пожелания</dt><dd>' + esc(r.spec || 'Не указаны') + '</dd></dl></div>' +
+  return '<div class="scroll"><div class="card"><h2>' + esc(r.title) + '</h2><span class="cm">' + esc(c.name) + '</span>' + clientStatusChip(r.key, true) + '<dl class="kv"><dt>Телефон</dt><dd>' + esc(c.phone || 'Не указан') + '</dd><dt>Поколение</dt><dd>' + esc(r.generation || 'Уточнить') + '</dd><dt>Годы</dt><dd>' + esc(r.years || 'Уточнить') + '</dd><dt>Пробег</dt><dd>' + esc(r.mileage || 'Уточнить') + '</dd><dt>Бюджет</dt><dd>' + (r.budget ? rub(r.budget) : 'Уточнить') + '</dd><dt>Пожелания</dt><dd>' + esc(r.spec || 'Не указаны') + '</dd><dt>Ответственный</dt><dd>' + esc(r.mgr || 'Не назначен') + '</dd>' + (r.nextContactAt ? '<dt>Следующий контакт</dt><dd>' + new Date(r.nextContactAt).toLocaleString('ru-RU') + '</dd>' : '') + '</dl></div>' +
     (r.sourceText ? '<div class="card"><b>Исходное сообщение</b><p style="white-space:pre-wrap">' + esc(r.sourceText) + '</p></div>' : '') +
     '<div class="card"><b>Источники поиска</b><p class="cm">МойСклад, поставщики и объявления пока не подключены. Результатов поиска для этого запроса нет.</p></div><button class="btn white" data-a="openCard">Посмотреть пример подбора Toyota Camry</button></div>';
 }
@@ -953,7 +954,7 @@ function vCabinets() {
     ['supplier', 'Поставщик', 'Пример получения запроса и ответа с вариантом', 'box'],
     ['admin', 'Администратор', 'Пользователи и управление доступами', 'key']
   ];
-  return '<div class="scroll"><div class="card"><b>Рабочие кабинеты</b><p class="cm">Просмотр интерфейсов на демонстрационных данных. Ваша учётная запись сохраняет права администратора.</p></div>' + options.map(function (r) {
+  return '<div class="scroll"><button class="btn b-pri" data-a="go" data-v="desktopLogin">CRM и админка на компьютере</button><div class="card"><b>Рабочие кабинеты</b><p class="cm">Просмотр интерфейсов на демонстрационных данных. Ваша учётная запись сохраняет права администратора.</p></div>' + options.map(function (r) {
     return '<button class="card" style="border:0;text-align:left;font:inherit;cursor:pointer" data-a="viewCabinet" data-v="' + r[0] + '"><span class="row sb"><span class="row">' + ic(r[3]) + '<b>' + r[1] + '</b></span>' + ic('next') + '</span><span class="cm">' + r[2] + '</span></button>';
   }).join('') + '<div class="card"><b>Сценарий по брифу v3</b><p class="cm">Лид → запрос → склад, поставщики и рынок → сравнение → цена и подтверждение → текст или КП → обратная связь.</p><span class="cm">Внешний поиск, ИИ, CRM и рассылка поставщикам пока не подключены.</span></div></div>';
 }
@@ -963,6 +964,7 @@ function vMore() {
   return '<div class="scroll"><div class="card" style="flex-direction:row;align-items:center;gap:14px">' +
     '<div style="width:52px;height:52px;border-radius:50%;background:var(--primary);color:var(--card);display:flex;align-items:center;justify-content:center;font-weight:700">' + esc(initials(meName)) + '</div>' +
     '<div style="flex:1"><div style="font-weight:700;font-size:17px">' + esc(meName) + '</div><div class="cm">' + ROLES[S.role] + (S.tg ? ' · ID ' + esc(S.tg.id) : '') + ' · [Название дилера]</div></div></div>' +
+    '<button class="btn white" data-a="go" data-v="desktopLogin">Вход на компьютере · CRM</button>' +
     '<button class="btn white" data-a="offerArchive">Сохранённые КП</button>' +
     (isAdmin() ? '<button class="btn white sb" data-a="cabinets">Выбрать кабинет' + ic('car') + '</button>' : '') +
     '<div class="card" style="gap:12px"><span class="lbl">Устройства</span>' +
@@ -1091,12 +1093,13 @@ function vUser() {
 
 function vBoot() { return '<div class="auth" style="justify-content:center"><div class="wm">подбор</div><p class="auth-s">Проверяем доступ</p></div>'; }
 
-var VIEWS = { offerArchive: vOfferArchive, savedOffer: vSavedOffer, request: vRequest, cabinets: vCabinets, boot: vBoot, noaccess: vNoAccess, access: vAccess, user: vUser,  login: vLogin, list: vList, lead: vLead, newreq: vNew, supcheck: vSupcheck, card: vCard, offer: vOffer, approve: vApprove, calls: vCalls, reply: vReply, client: vClient, status: vStatus, feedback: vFeedback, more: vMore, settings: vSettings, supplier: vSupplier };
+var VIEWS = { desktopLogin: vDesktopLogin, offerArchive: vOfferArchive, savedOffer: vSavedOffer, request: vRequest, cabinets: vCabinets, boot: vBoot, noaccess: vNoAccess, access: vAccess, user: vUser,  login: vLogin, list: vList, lead: vLead, newreq: vNew, supcheck: vSupcheck, card: vCard, offer: vOffer, approve: vApprove, calls: vCalls, reply: vReply, client: vClient, status: vStatus, feedback: vFeedback, more: vMore, settings: vSettings, supplier: vSupplier };
 
 /* ---------- рендер ---------- */
 function header(screen, hasBack) {
   var owner = S.role === 'owner';
   var m = META[screen] || ['', ''];
+  if (screen === 'desktopLogin') m = ['Вход на компьютере', 'CRM и команда'];
   if (screen === 'offerArchive') m = ['Версии КП', 'Сохранённые предложения'];
   if (screen === 'savedOffer') m = ['Коммерческое предложение', 'Сохранённая версия'];
   if (screen === 'request') m = ['Запрос', 'Карточка клиента'];
@@ -1520,6 +1523,80 @@ function uploadLetterhead(file) {
   reader.readAsDataURL(file);
 }
 
+/* Shared CRM records are authoritative on the server, separate from personal demo state. */
+function crmKey(id) { return 'local-crm-' + id; }
+function mergeCrmRequest(row) {
+  var key = crmKey(row.id), old = REQS.filter(function (r) { return r.key === key; })[0];
+  var request = { key: key, custom: true, crmId: row.id, crmVersion: row.version, title: row.model, budget: Number(row.budget), generation: row.generation, years: row.years, mileage: row.mileage == null ? '' : row.mileage, spec: row.spec, sourceText: row.source_text,
+    mgr: row.assigned_name || (String(row.assigned_to) === String(S.me && S.me.id) ? S.me.name : row.assigned_to ? 'ID ' + row.assigned_to : 'Без ответственного'), assignedTo: row.assigned_to, nextContactAt: row.next_contact_at,
+    when: new Date(row.updated_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }), search: ['заявка CRM', 'info'] };
+  S.cls[key] = { name: row.client_name, phone: row.phone, car: row.model, status: row.status, reasons: row.reasons || [], main: row.main_reason || '', note: row.note || '', city: row.city, payment: row.payment, legal: row.legal, purchaseTime: row.purchase_time, consentAt: row.consent_at };
+  if (old) REQS = REQS.map(function (r) { return r.key === key ? request : r; }); else REQS.unshift(request);
+  return key;
+}
+function loadCrmRequests(more) {
+  if (!online() || !S.me || S.me.role === 'supplier') return Promise.resolve();
+  var page = more ? (S.crmPage || 0) + 1 : 0;
+  return (more ? Promise.resolve() : call('crm.import')).then(function () { return call('crm.list', { page: page }); }).then(function (j) {
+    if (!more) {
+      // The original personal state is preserved in user_workspaces.legacy_backup by the import RPC.
+      REQS = REQS.filter(function (r) { return !r.custom; });
+      Object.keys(S.cls).forEach(function (k) { if (/^local-/.test(k)) delete S.cls[k]; });
+    }
+    (j.requests || []).forEach(mergeCrmRequest);
+    S.crmPage = page; S.crmTotal = j.total || 0;
+  });
+}
+function vDesktopLogin() {
+  var h = '<div class="scroll"><div class="card"><b>Рабочий кабинет на компьютере</b><p class="cm">Откройте на компьютере этот адрес. Там находятся общая CRM, ответственные и управление командой.</p><a class="btn white" href="admin.html" target="_blank" rel="noopener">Открыть CRM</a><span class="cm" style="overflow-wrap:anywhere">https://kusaq.github.io/podbor-demo/admin.html</span></div>';
+  if (!online()) return h + '<div class="card"><p>Получить код можно только после входа из Telegram.</p></div></div>';
+  if (S.me && S.me.role === 'supplier') return h + '<div class="card">Десктопная CRM доступна менеджеру, владельцу и администратору.</div></div>';
+  h += '<div class="card"><b>Одноразовый код</b><span class="cm">Код действует 5 минут. Сессия на компьютере действует до 8 часов.</span>';
+  if (S.desktopCode) h += '<div style="font:22px ui-monospace,monospace;letter-spacing:1px;padding:18px 0;text-align:center">' + esc(S.desktopCode) + '</div><span class="cm">До ' + new Date(S.desktopCodeExpires).toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'}) + '</span><button class="btn white" data-a="copyDesktopCode">Скопировать код</button>';
+  h += '<button class="btn b-acc" data-a="desktopCode"' + (S.desktopCodeBusy ? ' disabled' : '') + '>' + (S.desktopCodeBusy ? 'Готовим код…' : S.desktopCode ? 'Получить новый код' : 'Получить код') + '</button></div></div>';
+  return h;
+}
+A.desktopCode = function () {
+  if (!online() || S.desktopCodeBusy) return;
+  S.desktopCodeBusy = true; render();
+  return call('desktop.code').then(function (j) { S.desktopCode = j.code; S.desktopCodeExpires = j.expiresAt; }).catch(function (e) { say(errText(e)); }).then(function () { S.desktopCodeBusy = false; render(); });
+};
+A.copyDesktopCode = function () {
+  if (!S.desktopCode || !navigator.clipboard) { say('Скопируйте код с экрана'); return; }
+  return navigator.clipboard.writeText(S.desktopCode).then(function () { say('Код скопирован'); }).catch(function () { say('Копирование недоступно. Введите код с экрана'); });
+};
+A.moreCrm = function () { if (S.crmBusy) return; S.crmBusy = true; render(); return loadCrmRequests(true).catch(function (e) { say(errText(e)); }).then(function () { S.crmBusy = false; render(); }); };
+A.refreshCrm = function () { if (S.crmBusy) return; S.crmBusy = true; render(); return loadCrmRequests().catch(function (e) { say(errText(e)); }).then(function () { S.crmBusy = false; render(); }); };
+var originalLeadCreate = A.leadCreate;
+A.leadCreate = function () {
+  if (!online()) return originalLeadCreate();
+  if (S.creatingLead) return;
+  var name = String(S.fName || '').trim(), model = String(S.fModel || '').trim();
+  var phone = String(S.fPhone || '').replace(/\D/g, '');
+  if (phone.length === 11 && phone[0] === '8') phone = '7' + phone.slice(1);
+  if (phone.length === 10) phone = '7' + phone;
+  if (!name || !model) { say('Укажите имя клиента и модель'); return; }
+  if (phone.length < 10 || phone.length > 15) { say('Проверьте номер телефона'); return; }
+  if (!Number.isFinite(Number(S.fBudget)) || Number(S.fBudget) <= 0) { say('Укажите бюджет больше нуля'); return; }
+  if (!S.fConsent) { say('Подтвердите получение согласия клиента'); return; }
+  S.creatingLead = true; say('Сохраняем заявку в CRM');
+  return call('crm.save', { data: { client_name: name, phone: phone, model: model, budget: Number(S.fBudget), generation: String(S.fGeneration || '').trim(), years: String(S.fYears || '').trim(), mileage: S.fMileage ? Number(S.fMileage) : null, spec: String(S.fSpec || '').trim(), source_text: S.leadMode === 'quick' ? S.leadText : '', city: S.fCity || '', purchase_time: S.fWhen || '', payment: S.pay, legal: S.legal, consent_at: new Date().toISOString() } }).then(function (j) {
+    var key = mergeCrmRequest(j.request); S.crmTotal = (S.crmTotal || 0) + 1;
+    S.fName = ''; S.fPhone = ''; S.fModel = ''; S.fBudget = ''; S.fConsent = false;
+    go('request', { requestKey: key }); say('Заявка сохранена в общей CRM');
+  }).catch(function (e) { say(errText(e)); }).then(function () { S.creatingLead = false; render(); });
+};
+var originalStatusSave = A.stSave;
+A.stSave = function () {
+  var request = REQS.filter(function (r) { return r.key === S.stKey; })[0];
+  if (!online() || !request || !request.crmId) return originalStatusSave();
+  if (S.crmStatusBusy) return;
+  var d = S.draft;
+  if (d.status === 'lost' && (!d.reasons.length || d.reasons.indexOf('Другое') >= 0 && !d.note.trim())) { say('Выберите причину. Для Другое нужен комментарий'); return; }
+  S.crmStatusBusy = true;
+  return call('crm.save', { id: request.crmId, version: request.crmVersion, data: { status: d.status, reasons: d.reasons, main_reason: d.main, note: d.note } }).then(function (j) { mergeCrmRequest(j.request); back(); say('Статус сохранён в CRM'); }).catch(function (e) { say(errText(e)); }).then(function () { S.crmStatusBusy = false; });
+};
+
 /* Account-specific prototype state. Telegram identity is never persisted here. */
 var workspaceReady = false, workspaceRevision = 0, workspaceTimer = null;
 var workspaceSaved = '', workspaceSaving = false, workspaceConflict = false;
@@ -1530,7 +1607,7 @@ function snapshotWorkspace() {
   DEMO_SETTINGS.forEach(function (k) { settings[k] = S[k]; });
   return {
     version: 1, settings: settings,
-    requests: REQS.filter(function (r) { return r.custom; }), clients: S.cls,
+    requests: REQS.filter(function (r) { return r.custom && !r.crmId; }), clients: Object.keys(S.cls).reduce(function (out, key) { if (!/^local-crm-/.test(key)) out[key] = S.cls[key]; return out; }, {}),
     prices: S.prices, picked: S.picked, callRes: S.callRes, hist: S.hist,
     sent: S.sent, offers: S.offers || [], log: S.log,
     supArrived: S.supArrived, stockOn: S.stockOn, marketOn: S.marketOn
@@ -1622,7 +1699,7 @@ A.loadServerState = function () {
   if (!window.confirm('Загрузить серверную версию? Текущая копия останется в резервной копии на этом устройстве.')) return;
   try { localStorage.setItem(workspaceKey() + '-backup', JSON.stringify(snapshotWorkspace())); } catch (e) { say('Не удалось сохранить резервную копию. Загрузка отменена'); return; }
   workspaceConflict = false; workspaceLastError = '';
-  return call('workspace.get').then(function (j) { applyWorkspace(j.state); workspaceRevision = j.revision; workspaceSaved = JSON.stringify(snapshotWorkspace()); cacheWorkspace(snapshotWorkspace(), false); workspaceStatus = 'saved'; render(); }).catch(function (e) { workspaceStatus = 'error'; workspaceLastError = errText(e); updateSyncIndicator(); });
+  return call('workspace.get').then(function (j) { applyWorkspace(j.state); workspaceRevision = j.revision; workspaceSaved = JSON.stringify(snapshotWorkspace()); cacheWorkspace(snapshotWorkspace(), false); workspaceStatus = 'saved'; return loadCrmRequests().then(render); }).catch(function (e) { workspaceStatus = 'error'; workspaceLastError = errText(e); updateSyncIndicator(); });
 };
 window.addEventListener('pagehide', function () { if (workspaceReady && online()) cacheWorkspace(snapshotWorkspace(), JSON.stringify(snapshotWorkspace()) !== workspaceSaved); });
 

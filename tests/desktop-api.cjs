@@ -1,0 +1,27 @@
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),{webcrypto}=require('node:crypto'),{stripTypeScriptTypes}=require('node:module');
+let source=fs.readFileSync(path.join(__dirname,'..','supabase/functions/api/index.ts'),'utf8').replace(/^import .*createClient.*;\n/m,'');source=stripTypeScriptTypes(source);
+const user={tg_id:123456789,name:'Test',role:'admin',active:true,company_id:'11111111-1111-4111-8111-111111111111'};
+const codes=new Map(),sessions=new Map(),rpcCalls=[];let handler;
+function from(table){let op='read',record,filters={};const q={select(){return q},eq(k,v){filters[k]=v;return q},gt(k,v){filters['gt:'+k]=v;return q},order(){return q},delete(){op='delete';return q},insert(v){op='insert';record=v;return q},update(v){op='update';record=v;return q},single:async()=>result(),maybeSingle:async()=>result(),then(a,b){return Promise.resolve(result()).then(a,b)}};
+ function result(){if(table==='app_users')return {data:String(filters.tg_id)===String(user.tg_id)?{...user}:null,error:null};if(table==='mocks')return {data:[],error:null};const map=table==='desktop_login_codes'?codes:table==='desktop_sessions'?sessions:null;if(!map)return {data:null,error:null};const keyName=table==='desktop_login_codes'?'code_hash':'token_hash';if(op==='insert'){map.set(record[keyName],{...record});return {data:record,error:null}}const entries=[...map.entries()].filter(([key,v])=>Object.entries(filters).every(([k,w])=>k.startsWith('gt:')?v[k.slice(3)]>w:String(v[k])===String(w)));if(op==='delete')entries.forEach(([key])=>map.delete(key));return {data:entries[0]?.[1]||null,error:null}}return q}
+const secret='0000000:synthetic-unit-test-value';
+const context={console:{log(){},error(){}},URLSearchParams,TextEncoder,crypto:webcrypto,Response,Date,Number,Deno:{env:{get:k=>k==='BOT_TOKEN'?secret:'unused'},serve:f=>handler=f},createClient:()=>({from,rpc:async(name,args)=>{rpcCalls.push({name,args});return {data:name==='crm_list_requests'?{requests:[],total:0}:name==='crm_save_request'?{id:'22222222-2222-4222-8222-222222222222',...args.p_data}:0,error:null}}})};vm.createContext(context);vm.runInContext(source,context);
+async function signature(){const p=new URLSearchParams({auth_date:String(Math.floor(Date.now()/1000)),user:JSON.stringify({id:user.tg_id})});const check=[...p].sort(([a],[b])=>a<b?-1:1).map(([k,v])=>`${k}=${v}`).join('\n');const h=async(k,d)=>webcrypto.subtle.sign('HMAC',await webcrypto.subtle.importKey('raw',k,{name:'HMAC',hash:'SHA-256'},false,['sign']),new TextEncoder().encode(d));p.set('hash',Buffer.from(await h(await h(new TextEncoder().encode('WebAppData'),secret),check)).toString('hex'));return p.toString()}
+(async()=>{const init=await signature();const call=(action,payload={},auth={initData:init})=>handler(new Request('https://test.local/',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...auth,action,payload})}));
+ let r=await call('desktop.code');assert.equal(r.status,200);const code=(await r.json()).code;assert.equal(codes.size,1);assert(![...codes.keys()].includes(code.replaceAll('-','')));
+ r=await call('desktop.exchange',{code},{});assert.equal(r.status,200);const login=await r.json();assert(/^[a-f0-9]{64}$/.test(login.sessionToken));assert(!sessions.has(login.sessionToken));const auth={desktopSession:login.sessionToken};
+ assert.equal((await call('desktop.exchange',{code},{})).status,401);
+ assert.equal((await call('me',{},auth)).status,200);
+ assert.equal((await call('desktop.code',{},auth)).status,403);
+ assert.equal((await call('crm.list',{p_actor:'another'},auth)).status,200);assert.equal(rpcCalls.at(-1).args.p_actor,String(user.tg_id));
+ assert.equal((await call('crm.save',{data:{client_name:'T',phone:'89991234567',model:'Car',budget:3000000,consent_at:new Date().toISOString()}},auth)).status,200);assert.equal(rpcCalls.at(-1).args.p_data.phone,'79991234567');
+ assert.equal((await call('crm.save',{data:{client_name:'T',phone:'79991234567',model:'Car',budget:-1,consent_at:new Date().toISOString()}},auth)).status,400);
+ assert.equal((await call('crm.save',{data:{client_name:'T',phone:'79991234567',model:'Car',budget:1,consent_at:new Date().toISOString(),company_id:'other'}},auth)).status,400);
+ user.active=false;assert.equal((await call('me',{},auth)).status,403);user.active=true;
+ user.role='supplier';assert.equal((await call('crm.list',{},auth)).status,403);user.role='manager';assert.equal((await call('users.list',{},auth)).status,403);user.role='admin';
+ assert.equal((await call('desktop.logout',{},auth)).status,200);assert.equal((await call('me',{},auth)).status,401);
+ r=await call('desktop.code');const expiredCode=(await r.json()).code;[...codes.values()][0].expires_at='2000-01-01T00:00:00Z';assert.equal((await call('desktop.exchange',{code:expiredCode},{})).status,401);
+ r=await call('desktop.code');const freshCode=(await r.json()).code;r=await call('desktop.exchange',{code:freshCode},{});const freshToken=(await r.json()).sessionToken;[...sessions.values()][0].expires_at='2000-01-01T00:00:00Z';assert.equal((await call('me',{}, {desktopSession:freshToken})).status,401);
+ assert.equal((await call('desktop.exchange',{code:'2345-6789-ABCD'},{})).status,401);
+ console.log('PASS desktop auth: hashed one-time codes, single use, session validation, logout, disabled users, role checks, verified actor and CRM input validation');
+})().catch(e=>{console.error(e.stack);process.exitCode=1});
