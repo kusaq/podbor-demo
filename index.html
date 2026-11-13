@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="var(--background)">
 <title>Подбор</title>
+<meta name="podbor-version" content="2026-11-13-workspace-v1">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script defer src="assets/pdf-lib.min.js"></script>
+<script defer src="assets/fontkit.umd.min.js"></script>
+<script defer src="pdf.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <style>
@@ -335,7 +339,7 @@ var RES = { ok: ['правда', 'good'], soft: ['допустимо', 'warn'], 
 var META = {
   lead: ['Новый лид', ''], newreq: ['Новый запрос', 'Алексей Морозов'], supcheck: ['Запрос поставщикам', ''], card: ['Toyota Camry', ''],
   calls: ['Обзвон', 'Toyota Camry'], reply: ['Ответ П-07', 'Япония'], client: ['Предложение', 'Алексей Морозов'], status: ['Статус клиента', ''],
-  feedback: ['Клиенты', ''], approve: ['Подтверждение цен', ''], more: ['Профиль', ''], settings: ['Настройки', ''], supplier: ['Бот подбора', 'Telegram'], access: ['Доступы', ''], user: ['Пользователь', '']
+  feedback: ['Клиенты', ''], approve: ['Подтверждение цен', ''], more: ['Профиль', ''], settings: ['Настройки', ''], supplier: ['Бот подбора', 'Демосценарий без рассылки'], access: ['Доступы', ''], user: ['Пользователь', '']
 };
 
 /* ---------- доступы ---------- */
@@ -355,7 +359,7 @@ function loadUsers() { try { var r = JSON.parse(localStorage.getItem(USERS_KEY))
 function saveUsers() { try { localStorage.setItem(USERS_KEY, JSON.stringify(S.users)); } catch (e) {} }
 function findUser(id) { return S.users.filter(function (u) { return u.id === String(id); })[0]; }
 function initials(n) { return String(n || '?').split(/\s+/).slice(0, 2).map(function (w) { return w.charAt(0).toUpperCase(); }).join(''); }
-function homeOf(role) { return role === 'admin' ? 'access' : role === 'supplier' ? 'supplier' : 'list'; }
+function homeOf(role) { return role === 'admin' ? 'cabinets' : role === 'supplier' ? 'supplier' : 'list'; }
 var TG = window.Telegram && window.Telegram.WebApp;
 /* ?tg=123 в адресе изображает вход из Telegram с этим ID, чтобы проверять без телефона. */
 function tgUser() {
@@ -373,7 +377,7 @@ function call(action, payload) {
     .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error(j.error || ('HTTP ' + r.status)); e.code = j.error || 'http'; throw e; } return j; }); });
 }
 function errText(e) {
-  return ({ forbidden: 'Нет прав на это', self: 'Себя нельзя выключить, понизить или удалить', exists: 'Этот ID уже есть в списке', bad_id: 'Telegram ID это число из цифр', bad_name: 'Впишите имя', bad_init_data: 'Telegram не подтвердил вход, откройте приложение заново' })[e.code] || 'Не получилось: ' + e.message;
+  return ({ forbidden: 'Нет прав на это', self: 'Себя нельзя выключить, понизить или удалить', exists: 'Этот ID уже есть в списке', bad_id: 'Telegram ID это число из цифр', bad_name: 'Впишите имя', workspace_too_large: 'Превышен общий объём данных. Уменьшите размер бланка', db_workspace_failed: 'Сервер не смог сохранить или прочитать данные. Повторите позже', bad_workspace: 'Не удалось проверить формат сохраняемых данных', bad_init_data: 'Telegram не подтвердил вход, откройте приложение заново' })[e.code] || 'Не получилось: ' + e.message;
 }
 function fromRow(r) {
   return { id: String(r.tg_id), name: r.name, role: r.role, on: !!r.active, added: r.created_at ? new Date(r.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '') : '' };
@@ -396,9 +400,8 @@ function enterOnline() {
   S.screen = 'boot'; S.bootErr = ''; render();
   S.tg = TG.initDataUnsafe && TG.initDataUnsafe.user || null;
   call('me').then(function (j) {
-    S.me = fromRow(j.me); S.role = S.me.role; applyMocks(j.mocks || []);
-    S.screen = homeOf(S.role); S.stack = [];
-    if (S.role === 'admin' || S.role === 'owner') return refreshUsers();
+    S.me = fromRow(j.me); S.role = S.me.role; restoreDemoSettings(); applyMocks(j.mocks || []); loadRequests();
+    return loadWorkspace().then(function () { S.screen = homeOf(S.role); S.stack = []; if (S.role === 'admin' || S.role === 'owner') return refreshUsers(); });
   }).catch(function (e) {
     S.me = null; S.screen = 'noaccess';
     if (e.code !== 'no_access') S.bootErr = errText(e);
@@ -436,13 +439,15 @@ var S = {
   stab: 'tol', genPolicy: 'same', priceMode: 'ceil', rateRule: 'pct', visibility: 'platform',
   t: { sup: 2, alarm: 6, client: 2, lost: 5, fresh: 90 }, rule: { median: 5, margin: 3 }, kpDays: 7, statShare: false,
   groups: [
-    ['Цена', ['Дорого', 'Нашёл дешевле']], ['Сроки', ['Долго ждать']],
-    ['Автомобиль', ['Не та комплектация', 'Не тот цвет', 'Не понравилось состояние']],
-    ['Деньги', ['Не одобрили кредит', 'Нет нужной суммы']], ['Условия', ['Не устроила предоплата']],
-    ['Клиент', ['Передумал', 'Купил в другом месте', 'Не выходит на связь', 'Другое']]
+    ['Цена', ['Дорого', 'Нашёл дешевле у конкурента', 'Не договорились о цене']],
+    ['Сроки', ['Долгая поставка', 'Нужна машина срочно']],
+    ['Автомобиль', ['Не смогли подобрать', 'Не подошли год, пробег или поколение', 'Не подошли цвет или комплектация', 'Не устроило состояние или история']],
+    ['Деньги', ['Не одобрили кредит или лизинг', 'Не продал свой авто (трейд-ин)', 'Нет денег сейчас']],
+    ['Условия', ['Не устроила предоплата', 'Не устроили договор или гарантии', 'Не доверяет параллельному импорту']],
+    ['Клиент', ['Передумал', 'Отложил покупку', 'Купил в другом месте', 'Перестал отвечать', 'Другое']]
   ],
   newReason: '', excluding: '', excluded: [],
-  supStep: 0, toast: '',
+  supStep: 0, toast: '', dealer: { name: '', inn: '', address: '', phone: '' }, templates: {}, letterheadId: '', offers: [], searchQuery: '', searchOpen: true,
   callIdx: 0, callRes: {}, hist: [], mm: '', mmFields: [], fixVals: {}, callNote: '',
   log: [
     ['Запрос поставщикам', 'удалено', 'info', 'Телефон клиента', '16 октября, 11:02'],
@@ -452,13 +457,21 @@ var S = {
 };
 var app = document.getElementById('app');
 var timers = [], toastT = null;
-function set(p) { Object.assign(S, p); render(); }
+function set(p) { Object.assign(S, p); if (online() && p.screen === 'login') workspaceReady = false; saveDemoSettings(); render(); }
+var DEMO_SETTINGS = ['t', 'rule', 'kpDays', 'genPolicy', 'priceMode', 'rateRule', 'visibility', 'groups', 'statShare', 'dealer', 'templates', 'letterheadId'];
+function saveDemoSettings() {
+  if (online() && !S.me) return;
+  try { var data = {}; DEMO_SETTINGS.forEach(function (k) { data[k] = S[k]; }); localStorage.setItem('podbor-demo-settings-v3-' + (S.me ? S.me.id : 'browser-demo'), JSON.stringify(data)); } catch (e) {}
+}
+function restoreDemoSettings() {
+  try { var data = JSON.parse(localStorage.getItem('podbor-demo-settings-v3-' + (S.me ? S.me.id : 'browser-demo')) || 'null'); if (!data || typeof data !== 'object') return; DEMO_SETTINGS.forEach(function (k) { if (Object.prototype.hasOwnProperty.call(data, k) && typeof data[k] === typeof S[k]) S[k] = data[k]; }); } catch (e) {}
+}
 function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
 function say(msg) { clearTimeout(toastT); set({ toast: msg }); toastT = setTimeout(function () { set({ toast: '' }); }, 2400); }
 function go(screen, extra) { set(Object.assign({ stack: S.stack.concat([S.screen]), screen: screen }, extra || {})); }
 function tab(screen) { set({ screen: screen, stack: [] }); }
 function back() { var st = S.stack.slice(); var prev = st.pop() || 'list'; set({ stack: st, screen: prev }); }
-var DESKTOP = /[?&]layout=desktop\b/.test(location.search);
+var DESKTOP = /[?&]layout=desktop\b/.test(location.search) || (!TG && window.innerWidth >= 1000);
 function isWide() { return DESKTOP && window.innerWidth >= 1000; }
 
 /* ---------- производные ---------- */
@@ -493,8 +506,8 @@ function priceState(id) {
   var margin = (v - cost) / cost * 100, toMed = (v - MARKET.median) / MARKET.median * 100;
   var why = [];
   if (v < cost) return { k: 'below', margin: margin, toMed: toMed, why: ['ниже себестоимости'] };
-  if (toMed < -S.rule.median) why.push('ниже медианы рынка больше чем на ' + S.rule.median + '%');
-  if (margin < S.rule.margin) why.push('маржа меньше ' + S.rule.margin + '%');
+  if (S.rule.medianEnabled !== false && toMed < -S.rule.median) why.push('ниже медианы рынка больше чем на ' + S.rule.median + '%');
+  if (S.rule.marginEnabled !== false && margin < S.rule.margin) why.push('маржа меньше ' + S.rule.margin + '%');
   if (!why.length) return { k: 'ok', margin: margin, toMed: toMed, why: why };
   var k = p.apprV === v ? (p.appr === 'ok' ? 'approved' : p.appr === 'pending' ? 'pending' : p.appr === 'rejected' ? 'rejected' : 'need') : 'need';
   return { k: k, margin: margin, toMed: toMed, why: why };
@@ -571,13 +584,13 @@ function vList() {
   var pills = [['all', 'Все'], ['search', 'Ищем'], ['think', 'Думает'], ['lost', 'Слился'], ['won', 'Заказал']].map(function (f) {
     return '<button class="pill ' + (S.listFilter === f[0] ? 'on' : '') + '" data-a="filter" data-v="' + f[0] + '">' + f[1] + ' ' + cnt(f[0]) + '</button>';
   }).join('');
-  var items = REQS.filter(function (r) { return S.listFilter === 'all' || S.cls[r.key].status === S.listFilter; }).map(function (r) {
+  var items = REQS.filter(function (r) { var q = S.searchQuery.toLowerCase().trim(); var c = S.cls[r.key]; return (S.listFilter === 'all' || c.status === S.listFilter) && (!q || (r.title + ' ' + c.name + ' ' + (c.phone || '')).toLowerCase().indexOf(q) >= 0); }).map(function (r) {
     var search = r.search;
     if (r.live) search = S.sent ? ['отправлено', 'muted'] : ['ответили ' + S.supArrived + ' из 4', 'muted'];
     var cl = S.cls[r.key];
     var active = isWide() && r.live && S.screen !== 'list' && S.stack.indexOf('list') >= 0;
-    return '<button class="li' + (active ? ' active' : '') + '" data-a="' + (r.live ? 'openCard' : 'demoOnly') + '"><span class="cand-b" style="gap:2px">' +
-      '<span class="row sb"><span class="ct">' + esc(r.title) + '</span><span class="cm" style="font-size:12px">' + esc(r.when) + '</span></span>' +
+    return '<button class="li' + (active ? ' active' : '') + '" data-a="' + (r.live ? 'openCard' : 'openRequest') + '" data-v="' + esc(r.key) + '"><span class="cand-b" style="gap:2px">' +
+      '<span class="row sb"><span class="ct">' + esc(r.title) + (r.custom ? '' : ' · пример') + '</span><span class="cm" style="font-size:12px">' + esc(r.when) + '</span></span>' +
       '<span class="cm">' + esc(cl.name) + (owner ? ', ' + esc(r.mgr) : '') + '</span>' +
       '<span class="row" style="gap:6px;padding-top:6px">' + clientStatusChip(r.key) + chip(search[0], TONE[search[1]]) + '</span></span></button>';
   }).join('');
@@ -589,37 +602,51 @@ function vList() {
       ? '<button class="banner" style="background:var(--warning-soft);color:var(--warning-strong);align-items:center;cursor:pointer" data-a="tab" data-v="feedback">' + ic('bell') +
         '<div style="flex:1"><b>ООО «Вектор» слился?</b><p>Думает ' + days(S.cls.bmw.days) + ' по BMW X5</p></div>' + ic('next', 'i-s') + '</button>' : '';
   return '<div class="scroll" data-k="list">' +
-    banner +
+    (S.searchOpen ? '<div class="field"><label for="requestSearch">Найти запрос</label><input id="requestSearch" class="inp" data-in="searchQuery" value="' + esc(S.searchQuery) + '" placeholder="Модель, клиент или телефон"></div>' : '') + banner +
     '<div class="pills">' + pills + '</div>' + (items ? '<div class="group">' + items + '</div>' : '<div class="card" style="align-items:center;padding:24px"><span class="cm">В этом статусе запросов нет</span></div>') + '</div>';
 }
 
+function requestField(id, label, key, placeholder, type) {
+  return '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" class="inp" data-in="' + key + '" type="' + (type || 'text') + '" value="' + esc(S[key] || '') + '" placeholder="' + esc(placeholder) + '"></div>';
+}
 function vLead() {
   var h = '<div class="scroll"><div class="seg"><button class="' + (S.leadMode === 'quick' ? 'on' : '') + '" data-a="leadMode" data-v="quick">Быстрое поле</button><button class="' + (S.leadMode === 'form' ? 'on' : '') + '" data-a="leadMode" data-v="form">Форма</button></div>';
-  if (S.leadMode === 'quick') {
-    h += '<div class="card"><label for="lt" class="lbl">Сообщение клиента</label><textarea id="lt" class="inp" data-in="leadText">' + esc(S.leadText) + '</textarea>' +
-      '<button class="btn b-pri" data-a="leadParse">' + ic('spark', 'i-s') + 'Разобрать</button></div>';
-    if (S.leadParsed) {
-      h += '<div class="card"><div class="row sb"><b>Лид</b>' + chip('новый клиент', TONE.good) + '</div><dl class="kv">' +
-        '<dt>Имя</dt><dd>Алексей</dd><dt>Телефон</dt><dd>+7 916 204 18 41</dd><dt>Интерес</dt><dd>Toyota Camry XV70</dd><dt>Бюджет</dt><dd>до 3,2 млн ₽</dd><dt>Канал</dt><dd>WhatsApp</dd></dl>' +
-        '<div class="row cm" style="gap:6px">' + ic('inbox', 'i-s') + 'Исходный текст сохранён комментарием</div>' +
-        '<button class="btn b-sm" style="width:100%" data-a="leadParse">Исправить разбор</button></div>';
-      h += anketa();
-      h += '<button class="btn b-acc" data-a="leadCreate">Создать запрос</button>';
-    }
-  } else {
-    h += '<div class="card"><div class="field"><label for="fn">Имя</label><input id="fn" class="inp" data-in="fName" value="' + esc(S.fName) + '" placeholder="Алексей"></div>' +
-      '<div class="field"><label for="fp">Телефон</label><input id="fp" class="inp" data-in="fPhone" inputmode="tel" value="' + esc(S.fPhone) + '" placeholder="+7 900 000 00 00"></div></div>' + anketa() +
-      '<button class="btn b-acc" data-a="leadCreate">Создать лид</button>';
-  }
-  return h + '</div>';
+  if (S.leadMode === 'quick') h += '<div class="card"><label for="lt" class="lbl">Сообщение клиента</label><textarea id="lt" class="inp" data-in="leadText">' + esc(S.leadText) + '</textarea><span class="cm">Исходное сообщение сохранится в запросе. Заполните и проверьте поля ниже. Автоматический ИИ-разбор ещё не подключён.</span></div>';
+  h += '<div class="card">' + requestField('fn', 'Имя клиента', 'fName', 'Имя клиента') + requestField('fp', 'Телефон', 'fPhone', '+7 900 000 00 00', 'tel') + '</div>';
+  h += '<div class="card">' + requestField('fm', 'Марка и модель', 'fModel', 'Toyota Camry') + requestField('fg', 'Поколение', 'fGeneration', 'XV70, либо уточнить') + requestField('fy', 'Годы', 'fYears', '2021-2023') + requestField('fk', 'Максимальный пробег, км', 'fMileage', '60000', 'number') + requestField('fb', 'Бюджет, ₽', 'fBudget', '3200000', 'number') + requestField('fc', 'Цвет и комплектация', 'fSpec', 'Белый, Prestige') + '</div>' + anketa();
+  h += '<button class="btn white sb" data-a="leadConsent" aria-pressed="' + !!S.fConsent + '">Согласие на обработку данных<span>' + (S.fConsent ? 'Получено' : 'Не отмечено') + '</span></button><p class="cm">' + (online() ? 'Запрос сохраняется в Supabase для вашей учётной записи и доступен на других ваших устройствах.' : 'Вы в браузерном демо. Запрос сохранится только на этом устройстве.') + '</p><button class="btn b-acc" data-a="leadCreate">Создать запрос</button></div>';
+  return h;
 }
+function customKey() { return 'podbor-requests-v3-' + (S.me ? S.me.id : 'browser-demo'); }
+function saveRequests() {
+  try {
+    var entries = REQS.filter(function (r) { return r.custom; }).map(function (r) { return { request: r, client: S.cls[r.key] }; });
+    localStorage.setItem(customKey(), JSON.stringify(entries)); return true;
+  } catch (e) { say('Не удалось сохранить запросы в браузере'); return false; }
+}
+function loadRequests() {
+  try {
+    var entries = JSON.parse(localStorage.getItem(customKey()) || '[]');
+    if (!Array.isArray(entries)) return;
+    entries.forEach(function (e) { if (e.request && /^local-/.test(e.request.key) && e.client && CST[e.client.status] && !S.cls[e.request.key]) { REQS.push(e.request); S.cls[e.request.key] = e.client; } });
+  } catch (e) {}
+}
+function vRequest() {
+  var r = REQS.filter(function (r) { return r.key === S.requestKey; })[0];
+  if (!r) return '<div class="scroll"><div class="card">Запрос не найден</div></div>';
+  var c = S.cls[r.key];
+  return '<div class="scroll"><div class="card"><h2>' + esc(r.title) + '</h2><span class="cm">' + esc(c.name) + '</span>' + clientStatusChip(r.key, true) + '<dl class="kv"><dt>Телефон</dt><dd>' + esc(c.phone || 'Не указан') + '</dd><dt>Поколение</dt><dd>' + esc(r.generation || 'Уточнить') + '</dd><dt>Годы</dt><dd>' + esc(r.years || 'Уточнить') + '</dd><dt>Пробег</dt><dd>' + esc(r.mileage || 'Уточнить') + '</dd><dt>Бюджет</dt><dd>' + (r.budget ? rub(r.budget) : 'Уточнить') + '</dd><dt>Пожелания</dt><dd>' + esc(r.spec || 'Не указаны') + '</dd></dl></div>' +
+    (r.sourceText ? '<div class="card"><b>Исходное сообщение</b><p style="white-space:pre-wrap">' + esc(r.sourceText) + '</p></div>' : '') +
+    '<div class="card"><b>Источники поиска</b><p class="cm">МойСклад, поставщики и объявления пока не подключены. Результатов поиска для этого запроса нет.</p></div><button class="btn white" data-a="openCard">Посмотреть пример подбора Toyota Camry</button></div>';
+}
+
 function anketa() {
   var h = '<div class="card"><button class="btn sb" style="background:none;padding:0;min-height:28px" data-a="anketa">Анкета клиента' + ic('down', '', S.anketa ? 'transform:rotate(180deg)' : '') + '</button>';
   if (S.anketa) {
     var seg = function (key, opts) { return '<div class="seg">' + opts.map(function (o) { return '<button class="' + (S[key] === o[0] ? 'on' : '') + '" data-a="setv" data-k="' + key + '" data-v="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div>'; };
-    h += '<div class="field"><label for="ac">Город</label><input id="ac" class="inp" placeholder="Москва"></div>' + seg('legal', [['person', 'Физлицо'], ['company', 'Юрлицо']]) +
+    h += '<div class="field"><label for="ac">Город</label><input id="ac" class="inp" data-in="fCity" value="' + esc(S.fCity || '') + '" placeholder="Москва"></div>' + seg('legal', [['person', 'Физлицо'], ['company', 'Юрлицо']]) +
       seg('pay', [['cash', 'Наличные'], ['credit', 'Кредит'], ['leasing', 'Лизинг']]) +
-      '<div class="field"><label for="at">Когда покупает</label><input id="at" class="inp" placeholder="в течение месяца"></div>' +
+      '<div class="field"><label for="at">Когда покупает</label><input id="at" class="inp" data-in="fWhen" value="' + esc(S.fWhen || '') + '" placeholder="в течение месяца"></div>' +
       '<span class="muted">Видят только менеджер и владелец</span>';
   }
   return h + '</div>';
@@ -656,7 +683,7 @@ function vSupcheck() {
     '<div style="background:var(--background);border-radius:14px;padding:12px 14px;font-size:14px;line-height:1.6">Срочно, клиент <span class="rm">имя удалено</span>, номер <span class="rm">телефон удалён</span></div></div>' +
     '<div class="card"><div class="row sb"><b>4 поставщика по Toyota</b><span class="row cm" style="gap:4px">' + ic('lock', 'i-s') + 'анонимно</span></div>' +
     '<div class="wrap">' + ['П-07 Япония', 'П-03 ОАЭ', 'П-11 Китай', 'П-14 Корея'].map(function (x) { return chip(x, TONE.muted); }).join('') + '</div></div>' +
-    '<button class="btn b-acc" data-a="sendSup">' + ic('send') + 'Отправить</button></div>';
+    '<button class="btn b-acc" data-a="sendSup">' + ic('send') + 'Запустить демопоиск</button></div>';
 }
 
 function analytics() {
@@ -859,25 +886,17 @@ function vClient() {
     if (lat.length) { lines.push('', 'Под заказ'); lat.forEach(function (c) { n++; lines.push(n + '. ' + c.car + ', ' + c.meta.split(' · ').join(', ') + ', ' + rub(pr(c.id).v) + ' под ключ, ' + c.term); }); }
     lines.push('', 'Цена под ключ с доставкой, таможней и оформлением. Фото ниже');
     var photos = list.reduce(function (a, c) { return a + c.photos; }, 0);
-    h += '<div class="wrap">' + ['без контактов', 'без источников', 'фото очищены'].map(function (t) { return '<span class="chip" style="' + TONE.good + '">' + ic('check', 'i-s') + t + '</span>'; }).join('') + '</div>' +
+    h += '<div class="wrap">' + ['без контактов поставщика', 'без источников'].map(function (t) { return '<span class="chip" style="' + TONE.good + '">' + ic('check', 'i-s') + t + '</span>'; }).join('') + '</div>' +
       '<div class="bubble" style="background:var(--card);max-width:100%;border-radius:22px 22px 6px 22px;padding:16px;white-space:pre-line;font-size:15px">' + esc(lines.join('\n')) + '</div>' +
-      '<div class="g2"><button class="btn b-sm white" data-a="toast" data-v="Текст скопирован">' + ic('copy', 'i-s') + 'Скопировать</button>' +
-      '<button class="btn b-sm white" data-a="toast" data-v="Фото сохранены">' + ic('img', 'i-s') + photos + ' фото</button></div>';
+      '<div class="g2"><button class="btn b-sm white" data-a="copyOffer">' + ic('copy', 'i-s') + 'Скопировать</button>' +
+      '<button class="btn b-sm white" data-a="toast" data-v="Фотографии для этого демопримера не загружены">' + ic('img', 'i-s') + 'Фото пока нет</button></div>';
   } else {
-    h += '<div class="paper"><div class="row sb" style="align-items:flex-start"><div style="width:84px;height:34px;border-radius:6px;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted-foreground);font-weight:600">[Логотип]</div>' +
-      '<div style="text-align:right;color:var(--muted-foreground);font-size:10px">[Название дилера]<br>ИНН [0000000000]<br>[Адрес]</div></div>' +
-      '<h3 style="margin-top:18px">Коммерческое предложение</h3><div style="color:var(--muted-foreground)">Для Алексея Морозова · 22 октября 2026</div>' +
-      list.map(function (c, i) {
-        return '<div style="display:flex;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--muted)"><div style="width:72px;height:54px;border-radius:6px;background:var(--border-soft);flex:none"></div>' +
-          '<div style="flex:1;min-width:0"><b>' + (i + 1) + '. ' + esc(c.car) + '</b><div style="color:var(--muted-foreground)">' + esc(c.meta.split(' · ').join(', ')) + ', ' + (c.kind === 'import' ? 'под заказ ' + esc(c.term) : 'в наличии в РФ') + '</div></div>' +
-          '<div style="font-weight:700;white-space:nowrap">' + rub(pr(c.id).v) + '</div></div>';
-      }).join('') +
-      '<div style="margin-top:16px;padding:10px;border-radius:6px;background:var(--background)">Цена под ключ, действует ' + days(S.kpDays) + ' до 29 октября</div>' +
-      '<div style="margin-top:14px;color:var(--muted-foreground)">Менеджер Марина Кравец · [телефон дилера]</div></div>' +
-      '<div class="g2"><button class="btn b-sm white" data-a="toast" data-v="PDF сохранён">' + ic('download', 'i-s') + 'Скачать PDF</button>' +
-      '<button class="btn b-sm white" data-a="toast" data-v="Версия ' + (S.kpVer + 1) + ' сохранена">' + ic('file', 'i-s') + 'Версия ' + (S.kpVer + 1) + '</button></div>';
+    var previewModel = offerModel(true);
+    h += (previewModel ? offerPreview(previewModel) : '') +
+      '<button class="btn white" data-a="offerArchive">Сохранённые версии КП</button><div class="g2"><button class="btn b-sm white" data-a="printOffer">' + ic('download', 'i-s') + 'Скачать PDF</button>' +
+      '<button class="btn b-sm white" data-a="saveOfferVersion">' + ic('file', 'i-s') + 'Версия ' + (S.kpVer + 1) + '</button></div>';
   }
-  h += S.sent ? '<div class="banner" style="background:var(--success-soft);color:var(--success)">' + ic('check') + '<div><b>Отправлено в 12:40</b><p>Статус клиента Думает, спросим о реакции через ' + days(S.t.client) + '</p></div></div>'
+  h += S.sent ? '<div class="banner" style="background:var(--success-soft);color:var(--success)">' + ic('check') + '<div><b>Отмечено как отправленное</b><p>Статус клиента Думает, спросим о реакции через ' + days(S.t.client) + '</p></div></div>'
     : '<button class="btn ' + (blocked.length ? 'b-off' : 'b-acc') + '" data-a="markSent">Отправлено</button>';
   return h + '</div>';
 }
@@ -901,7 +920,7 @@ function vStatus() {
     if (d.reasons.indexOf('Другое') >= 0) h += '<div class="field"><label for="stn">Комментарий</label><input id="stn" class="inp" data-in="stNote" value="' + esc(d.note) + '" placeholder="Что случилось"></div>';
     h += '</div>';
   }
-  if (d.status === 'won') h += '<div class="banner" style="background:var(--success-soft);color:var(--success)">' + ic('check') + '<div><b>Создадим заказ</b><p>Договор и предоплату ведём дальше в заказе</p></div></div>';
+  if (d.status === 'won') h += '<div class="banner" style="background:var(--success-soft);color:var(--success)">' + ic('check') + '<div><b>Клиент заказал</b><p>Договор, предоплата и логистика запланированы после MVP</p></div></div>';
   var ok = d.status !== 'lost' || d.reasons.length;
   return h + '<button class="btn ' + (ok ? 'b-acc' : 'b-off') + '" data-a="stSave">Сохранить</button></div>';
 }
@@ -926,16 +945,30 @@ function vFeedback() {
   return h + '</div>';
 }
 
+function isAdmin() { return S.me ? S.me.role === 'admin' : !online() && (S.role === 'admin' || S.demoAdmin === true); }
+function vCabinets() {
+  var options = [
+    ['manager', 'Менеджер', 'Запросы, подбор, обзвон, клиенты и предложения', 'list'],
+    ['owner', 'Владелец', 'Все запросы, подтверждение цен и настройки', 'shield'],
+    ['supplier', 'Поставщик', 'Пример получения запроса и ответа с вариантом', 'box'],
+    ['admin', 'Администратор', 'Пользователи и управление доступами', 'key']
+  ];
+  return '<div class="scroll"><div class="card"><b>Рабочие кабинеты</b><p class="cm">Просмотр интерфейсов на демонстрационных данных. Ваша учётная запись сохраняет права администратора.</p></div>' + options.map(function (r) {
+    return '<button class="card" style="border:0;text-align:left;font:inherit;cursor:pointer" data-a="viewCabinet" data-v="' + r[0] + '"><span class="row sb"><span class="row">' + ic(r[3]) + '<b>' + r[1] + '</b></span>' + ic('next') + '</span><span class="cm">' + r[2] + '</span></button>';
+  }).join('') + '<div class="card"><b>Сценарий по брифу v3</b><p class="cm">Лид → запрос → склад, поставщики и рынок → сравнение → цена и подтверждение → текст или КП → обратная связь.</p><span class="cm">Внешний поиск, ИИ, CRM и рассылка поставщикам пока не подключены.</span></div></div>';
+}
 function vMore() {
   var owner = S.role === 'owner';
   var meName = S.me ? S.me.name : owner ? 'Владелец компании' : S.role === 'admin' ? 'Администратор' : 'Марина Кравец';
   return '<div class="scroll"><div class="card" style="flex-direction:row;align-items:center;gap:14px">' +
     '<div style="width:52px;height:52px;border-radius:50%;background:var(--primary);color:var(--card);display:flex;align-items:center;justify-content:center;font-weight:700">' + esc(initials(meName)) + '</div>' +
     '<div style="flex:1"><div style="font-weight:700;font-size:17px">' + esc(meName) + '</div><div class="cm">' + ROLES[S.role] + (S.tg ? ' · ID ' + esc(S.tg.id) : '') + ' · [Название дилера]</div></div></div>' +
+    '<button class="btn white" data-a="offerArchive">Сохранённые КП</button>' +
+    (isAdmin() ? '<button class="btn white sb" data-a="cabinets">Выбрать кабинет' + ic('car') + '</button>' : '') +
     '<div class="card" style="gap:12px"><span class="lbl">Устройства</span>' +
     '<div class="row sb"><span style="font-size:14px">Telegram на iPhone</span>' + chip('это устройство', TONE.good) + '</div>' +
     '<div class="row sb"><span style="font-size:14px">Chrome на MacBook</span><span class="cm">вчера</span></div></div>' +
-    (owner || S.role === 'admin' ? '<button class="btn white sb" data-a="go" data-v="access">Доступы<span class="row cm" style="gap:4px">' + S.users.length + ic('next', 'i-s') + '</span></button>' : '') + '<button class="btn white" style="color:var(--destructive)" data-a="logoutAll">Выйти на всех устройствах</button>' + (online() ? '' : '<button class="btn white" data-a="toLogin">Сменить роль</button>') + '</div>';
+    (owner || S.role === 'admin' ? '<button class="btn white sb" data-a="go" data-v="access">Доступы<span class="row cm" style="gap:4px">' + S.users.length + ic('next', 'i-s') + '</span></button>' : '') + '<button class="btn white" style="color:var(--destructive)" data-a="logoutAll">' + (online() ? 'Закрыть приложение' : 'Вернуться к демовходу') + '</button>' + (online() ? '' : '<button class="btn white" data-a="toLogin">Сменить роль</button>') + '</div>';
 }
 
 function vSettings() {
@@ -960,7 +993,9 @@ function vSettings() {
       '<div class="card"><label for="ai" style="font-weight:600">Правила для ИИ</label><textarea id="ai" class="inp" style="min-height:96px;font-size:14px" placeholder="Не предлагать машины после такси"></textarea></div>';
   } else if (S.stab === 'price') {
     h += '<div class="card" style="gap:4px;padding:8px 16px"><div class="row sb" style="min-height:60px"><span style="font-size:14px;font-weight:500">Ниже себестоимости</span>' + chip('нельзя всегда', TONE.bad) + '</div>' +
+      '<button class="btn white sb" data-a="togglePriceRule" data-v="medianEnabled">Проверять отклонение от рынка<span>' + (S.rule.medianEnabled !== false ? 'Включено' : 'Выключено') + '</span></button>' +
       stepRow('bumpRule', 'median', 'Ниже медианы рынка больше чем на', S.rule.median + '%') +
+      '<button class="btn white sb" data-a="togglePriceRule" data-v="marginEnabled">Проверять минимальную маржу<span>' + (S.rule.marginEnabled !== false ? 'Включено' : 'Выключено') + '</span></button>' +
       stepRow('bumpRule', 'margin', 'Маржа от закупки меньше', S.rule.margin + '%') + '</div>' +
       '<span class="muted" style="padding:0 4px">Если сработало правило, цену подтверждает владелец</span>';
   } else if (S.stab === 'time') {
@@ -977,34 +1012,20 @@ function vSettings() {
     }).join('') + '</div><div class="card"><dl class="kv"><dt>Комиссия</dt><dd>100 000 ₽</dd><dt>Тарифы</dt><dd>v14 с 1 октября</dd></dl></div>';
   } else if (S.stab === 'reasons') {
     h += S.groups.map(function (g) {
-      return '<div class="card" style="gap:10px"><b>' + g[0] + '</b><div class="wrap">' + g[1].map(function (r) { return chip(r, TONE.muted); }).join('') + '</div></div>';
+      return '<div class="card" style="gap:10px"><b>' + g[0] + '</b><div class="wrap">' + g[1].map(function (r) { return '<button class="pill soft" data-a="editReason" data-v="' + esc(r) + '">' + esc(r) + '</button>'; }).join('') + '</div></div>';
     }).join('') +
       '<div class="card"><div class="field"><label for="nr">Новая причина в группу Клиент</label><input id="nr" class="inp" data-in="newReason" value="' + esc(S.newReason) + '" placeholder="Переехал в другой город"></div>' +
       '<button class="btn b-pri b-sm" style="width:100%" data-a="addReason">Добавить</button></div>';
   } else if (S.stab === 'kp') {
-    h += '<button class="card" style="border:0;cursor:pointer;align-items:center;padding:28px 16px;background:var(--card);font-family:inherit" data-a="toast" data-v="Бланк загружен">' + ic('download', 'i-l', 'color:var(--primary);transform:rotate(180deg)') +
-      '<b>Загрузить бланк</b><span class="cm">PDF или картинка</span></button>' +
-      '<div class="card">' + [['Название', '[Название дилера]'], ['ИНН', '[0000000000]'], ['Адрес', '[Город, улица, дом]'], ['Телефон', '[+7 000 000 00 00]']].map(function (f, i) {
-        return '<div class="field"><label for="kp' + i + '">' + f[0] + '</label><input id="kp' + i + '" class="inp" placeholder="' + f[1] + '"></div>';
-      }).join('') + '</div>' +
-      '<div class="card" style="gap:4px;padding:8px 16px">' + stepRow('bumpKp', 'kp', 'Срок действия цены', days(S.kpDays)) + '</div>';
+    var template = S.templates[S.letterheadId];
+    h += '<div class="card"><b>Бланк КП</b><label for="letterhead">PDF, PNG или JPEG, до 2 МБ</label><input type="file" id="letterhead" accept="application/pdf,image/png,image/jpeg"><span class="cm">' + (template ? esc(template.name) : 'Бланк не загружен') + '</span>' + (template ? '<button class="btn b-sm" data-a="clearLetterhead">Использовать чистый лист</button>' : '') + '<span class="cm">Для PDF используется первая страница. Оставьте центральную область бланка свободной для вариантов.</span></div>';
+    h += '<div class="card">' + [['name', 'Название дилера'], ['inn', 'ИНН'], ['address', 'Адрес'], ['phone', 'Телефон']].map(function (f) {
+      return '<div class="field"><label for="dealer-' + f[0] + '">' + f[1] + '</label><input id="dealer-' + f[0] + '" class="inp" data-in="dealer.' + f[0] + '" value="' + esc(S.dealer[f[0]]) + '"></div>';
+    }).join('') + '</div><div class="card">' + stepRow('bumpKp', 'kp', 'Срок действия цены', days(S.kpDays)) + '</div>';
   } else if (S.stab === 'team') {
-    h += '<button class="btn b-acc">Пригласить менеджера</button>' + [['mk', 'Марина Кравец', 'МК', 'Импорт', 3], ['os', 'Олег Сафин', 'ОС', 'Импорт', 5], ['al', 'Артём Лим', 'АЛ', 'Авто в РФ', 2]].map(function (m) {
-      var gone = S.excluded.indexOf(m[0]) >= 0, conf = !gone && S.excluding === m[0];
-      return '<div class="card"><div class="row" style="gap:12px"><div style="width:42px;height:42px;border-radius:50%;background:var(--muted);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">' + m[2] + '</div>' +
-        '<div style="flex:1;min-width:0"><div style="font-weight:600">' + m[1] + '</div><div class="cm">' + m[3] + ' · ' + (gone ? 0 : m[4]) + ' в работе</div></div>' +
-        (gone ? chip('исключён', TONE.bad) : conf ? '' : '<button class="btn b-sm" data-a="exclAsk" data-v="' + m[0] + '">Исключить</button>') + '</div>' +
-        (conf ? '<div class="muted" style="color:var(--destructive-strong)">Доступ закроется на всех устройствах, запросы перейдут Олегу Сафину</div><div class="g2">' +
-          '<button class="btn b-sm" data-a="exclCancel">Отмена</button><button class="btn b-sm" style="background:var(--destructive);color:var(--card)" data-a="exclDo" data-v="' + m[0] + '" data-n="' + m[1] + '">Исключить</button></div>' : '') + '</div>';
-    }).join('') + '<div class="card"><b>Контакты поставщиков видит</b>' + seg('visibility', [['platform', 'Только платформа'], ['owner', 'И владелец']]) + '</div>';
+    h += '<div class="card"><b>Команда</b><p class="cm">Участники и роли управляются через раздел доступов.</p><button class="btn b-pri" data-a="go" data-v="access">Открыть доступы</button><button class="btn" data-a="newUser">Добавить участника</button></div>';
   } else if (S.stab === 'api') {
-    h += '<div class="card"><div class="row sb"><b>Ключ API</b>' + chip('активен', TONE.good) + '</div>' +
-      '<div style="background:var(--background);border-radius:14px;padding:14px 16px;font-size:15px;letter-spacing:.04em">pk_live_••••••••7f3a</div>' +
-      '<div class="g2"><button class="btn b-sm" data-a="toast" data-v="Ключ скопирован">' + ic('copy', 'i-s') + 'Скопировать</button><button class="btn b-sm" data-a="toast" data-v="Выпущен новый ключ, старый отключён">' + ic('key', 'i-s') + 'Новый ключ</button></div></div>' +
-      '<div class="card" style="gap:10px"><b>Уведомления в CRM</b>' + ['Смена статуса клиента', 'Отправка предложения', 'Заказал или слился'].map(function (x) {
-        return '<div class="row sb" style="font-size:14px"><span>' + x + '</span>' + chip('включено', TONE.good) + '</div>';
-      }).join('') + '</div>' +
-      '<button class="btn white sb" data-a="statShare">Участвовать в обезличенной статистике<span class="switch ' + (S.statShare ? 'on' : '') + '"><span></span></span></button>';
+    h += '<div class="card"><b>Интеграции</b><p class="cm">CRM API, МойСклад, сервис объявлений, ИИ-разбор и рассылки пока не подключены. Действующих ключей CRM в приложении нет.</p></div>';
   } else {
     h += S.log.map(function (l) {
       return '<div class="card" style="gap:4px"><div class="row sb"><span class="ct" style="font-size:14px">' + esc(l[0]) + '</span>' + chip(l[1], TONE[l[2]]) + '</div>' +
@@ -1015,7 +1036,7 @@ function vSettings() {
 }
 
 function vSupplier() {
-  var h = '<div class="scroll" style="background:var(--muted-2);gap:10px;padding-top:12px">' +
+  var h = '<div class="scroll" style="background:var(--muted-2);gap:10px;padding-top:12px"><div class="card"><b>Демосценарий поставщика</b><span class="cm">Запросы и ответы здесь примерные. Сообщения ботом не отправляются.</span></div>' +
     '<div class="bubble" style="background:var(--card);align-self:flex-start;opacity:.8">Запрос З-5817 Kia Sorento ждёт ответа 2 ч</div>' +
     '<div class="bubble" style="background:var(--card);align-self:flex-start"><div style="font-weight:700;margin-bottom:4px">Новый запрос З-5821</div>' +
     '<div>Toyota Camry XV70 рестайлинг</div><div>с 2021 по 2023, до 60 000 км</div><div>белый, серебристый или серый</div><div>до 3 200 000 ₽ под ключ</div></div>';
@@ -1070,15 +1091,19 @@ function vUser() {
 
 function vBoot() { return '<div class="auth" style="justify-content:center"><div class="wm">подбор</div><p class="auth-s">Проверяем доступ</p></div>'; }
 
-var VIEWS = { boot: vBoot, noaccess: vNoAccess, access: vAccess, user: vUser,  login: vLogin, list: vList, lead: vLead, newreq: vNew, supcheck: vSupcheck, card: vCard, offer: vOffer, approve: vApprove, calls: vCalls, reply: vReply, client: vClient, status: vStatus, feedback: vFeedback, more: vMore, settings: vSettings, supplier: vSupplier };
+var VIEWS = { offerArchive: vOfferArchive, savedOffer: vSavedOffer, request: vRequest, cabinets: vCabinets, boot: vBoot, noaccess: vNoAccess, access: vAccess, user: vUser,  login: vLogin, list: vList, lead: vLead, newreq: vNew, supcheck: vSupcheck, card: vCard, offer: vOffer, approve: vApprove, calls: vCalls, reply: vReply, client: vClient, status: vStatus, feedback: vFeedback, more: vMore, settings: vSettings, supplier: vSupplier };
 
 /* ---------- рендер ---------- */
 function header(screen, hasBack) {
   var owner = S.role === 'owner';
   var m = META[screen] || ['', ''];
+  if (screen === 'offerArchive') m = ['Версии КП', 'Сохранённые предложения'];
+  if (screen === 'savedOffer') m = ['Коммерческое предложение', 'Сохранённая версия'];
+  if (screen === 'request') m = ['Запрос', 'Карточка клиента'];
+  if (screen === 'cabinets') m = ['Кабинеты', 'Бриф v3'];
   if (screen === 'list') m = ['Запросы', owner ? 'Все менеджеры' : ''];
   if (screen === 'offer') m = [BY[S.sel].car, BY[S.sel].src];
-  if (screen === 'card') m = ['Toyota Camry', 'Создан сегодня в 10:12'];
+  if (screen === 'card') m = ['Toyota Camry', 'Демонстрационный запрос'];
   if (screen === 'status') m = ['Статус клиента', S.cls[S.stKey].car];
   if (screen === 'user') m = [S.edit.isNew ? 'Новый пользователь' : 'Пользователь', S.edit.isNew ? '' : 'ID ' + S.edit.orig];
   if (screen === 'access') m = ['Доступы', 'Людей: ' + S.users.length];
@@ -1086,12 +1111,13 @@ function header(screen, hasBack) {
     : screen === 'list' ? '<button class="ib" aria-label="Поиск" data-a="soon">' + ic('search') + '</button>' : '<span class="sp"></span>';
   var right = screen === 'access' ? '<button class="ib dark" aria-label="Добавить пользователя" data-a="newUser">' + ic('plus') + '</button>'
     : screen === 'list' ? '<button class="ib dark" aria-label="Новый лид" data-a="goLead">' + ic('plus') + '</button>'
-    : screen === 'supplier' ? '<button class="ib" aria-label="Выйти" data-a="toLogin">' + ic('out') + '</button>' : '<span class="sp"></span>';
+    : screen === 'supplier' ? '<button class="ib" aria-label="' + (isAdmin() ? 'Кабинеты' : 'Выйти') + '" data-a="' + (isAdmin() ? 'cabinets' : 'toLogin') + '">' + ic('out') + '</button>' : '<span class="sp"></span>';
+  if (isAdmin() && screen !== 'cabinets' && screen !== 'user' && !hasBack) left = '<button class="ib" aria-label="Выбрать кабинет" data-a="cabinets">' + ic('car') + '</button>';
   return '<header class="top">' + left + '<div class="top-t"><h1>' + esc(m[0]) + '</h1>' + (m[1] ? '<p>' + esc(m[1]) + '</p>' : '') + '</div>' + right + '</header>';
 }
 function tabsBar() {
   var owner = S.role === 'owner';
-  var tabs = S.role === 'admin' ? [['access', 'Доступы', 'key'], ['settings', 'Настройки', 'sliders'], ['more', 'Профиль', 'user']]
+  var tabs = S.role === 'admin' ? [['cabinets', 'Кабинеты', 'car'], ['access', 'Доступы', 'key'], ['settings', 'Настройки', 'sliders'], ['more', 'Профиль', 'user']]
     : owner ? [['list', 'Запросы', 'list'], ['feedback', 'Клиенты', 'users'], ['settings', 'Настройки', 'sliders'], ['more', 'Профиль', 'user']]
     : [['list', 'Запросы', 'list'], ['calls', 'Обзвон', 'phone'], ['feedback', 'Клиенты', 'users'], ['more', 'Профиль', 'user']];
   var cur = S.stack.length ? S.stack[0] : S.screen;
@@ -1121,13 +1147,14 @@ function render() {
     else if (!S.stack.length) h += tabsBar();
   }
   if (S.toast) h += '<div class="toast" role="status" aria-live="polite">' + ic('check', 'i-s') + '<span>' + esc(S.toast) + '</span></div>';
-  app.innerHTML = h;
+  app.innerHTML = (S.screen === 'login' || S.screen === 'noaccess' || S.screen === 'boot' ? '' : syncIndicator()) + h;
   app.querySelectorAll('.scroll').forEach(function (el) {
     var k = el.dataset.k;
     if (k && keep[k] && (k === 'list' || k === 'settings' || S.lastScreen === S.screen)) el.scrollTop = keep[k];
   });
   S.lastScreen = S.screen;
   bindSwipe();
+  scheduleWorkspace();
 }
 window.addEventListener('resize', function () { var w = isWide(); if (w !== S.wasWide) { S.wasWide = w; render(); } });
 
@@ -1191,6 +1218,12 @@ var A = {
   back: back,
   tab: function (v) { tab(v); },
   go: function (v) { go(v); },
+  cabinets: function () { if (isAdmin()) tab('cabinets'); },
+  viewCabinet: function (v) {
+    if (!isAdmin() || !ROLES[v]) return;
+    if (!online()) S.demoAdmin = true;
+    S.role = v; S.stack = []; S.screen = homeOf(v); render();
+  },
   role: function (v) { set({ role: v, loginStep: 0 }); },
   forgot: function () { say('Ссылка для восстановления отправлена'); },
   sendCode: function () { if (S.login.trim() && S.password) set({ loginStep: 1, code: '' }); later(function () { var i = document.getElementById('otp'); if (i) i.focus(); }, 50); },
@@ -1199,24 +1232,45 @@ var A = {
   sms: function () { say('Код отправлен по SMS'); },
   loginBack: function () { set({ loginStep: 0, code: '' }); },
   openSupplier: function () { set({ screen: 'supplier', stack: [], supStep: 0 }); },
-  toLogin: function () { set({ screen: 'login', stack: [], loginStep: 0, code: '' }); },
-  logoutAll: function () { set({ screen: 'login', stack: [], loginStep: 0, code: '' }); say('Вы вышли на всех устройствах'); },
+  toLogin: function () { if (online()) return A.logoutAll(); S.me = null; S.demoAdmin = false; set({ screen: 'login', stack: [], loginStep: 0, code: '' }); },
+  logoutAll: function () { if (online()) { if (TG.close) TG.close(); else say('Закройте приложение крестиком в Telegram'); return; } S.me = null; S.demoAdmin = false; set({ screen: 'login', stack: [], loginStep: 0, code: '' }); },
   filter: function (v) { set({ listFilter: v }); },
   clFilter: function (v) { set({ clFilter: v }); },
   openCard: function () { if (isWide()) set({ screen: 'card', stack: ['list'] }); else go('card'); },
   demoOnly: function () { say('В демо открыт только Toyota Camry'); },
-  soon: function () { say('Поиск в демо не работает'); },
+  soon: function () { var search = document.getElementById('requestSearch'); if (search) search.focus(); },
   goLead: function () { if (isWide()) set({ screen: 'lead', stack: ['list'], leadParsed: false }); else go('lead', { leadParsed: false }); },
   leadMode: function (v) { set({ leadMode: v }); },
   leadParse: function () { set({ leadParsed: true }); },
   anketa: function () { set({ anketa: !S.anketa }); },
-  leadCreate: function () { go('newreq', { parsed: false, trim: '' }); say('Лид создан, клиент Алексей Морозов'); },
+  leadConsent: function () { set({ fConsent: !S.fConsent }); },
+  openRequest: function (v) { go('request', { requestKey: v }); },
+  leadCreate: function () {
+    var phone = String(S.fPhone || '').replace(/\D/g, '');
+    if (phone.length === 11 && phone[0] === '8') phone = '7' + phone.slice(1);
+    if (phone.length === 10) phone = '7' + phone;
+    var name = String(S.fName || '').trim(), model = String(S.fModel || '').trim(), budget = Number(S.fBudget);
+    if (!name || !model) { say('Укажите имя клиента и модель'); return; }
+    if (phone.length < 10 || phone.length > 15) { say('Проверьте номер телефона'); return; }
+    if (!Number.isFinite(budget) || budget <= 0) { say('Укажите бюджет больше нуля'); return; }
+    if (S.fMileage && (!Number.isFinite(Number(S.fMileage)) || Number(S.fMileage) < 0)) { say('Проверьте пробег'); return; }
+    if (!S.fConsent) { say('Подтвердите получение согласия клиента'); return; }
+    var duplicate = Object.keys(S.cls).filter(function (k) { return S.cls[k].phone === phone; })[0];
+    if (duplicate) { say('Клиент с таким телефоном уже есть'); return; }
+    var key = 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    var r = { key: key, custom: true, title: model, generation: String(S.fGeneration || '').trim(), years: String(S.fYears || '').trim(), mileage: S.fMileage || '', budget: budget, spec: String(S.fSpec || '').trim(), sourceText: S.leadMode === 'quick' ? S.leadText : '', when: 'сегодня', search: ['новый запрос', 'muted'], mgr: S.me ? S.me.name : 'Менеджер' };
+    S.cls[key] = { name: name, phone: phone, car: model, status: 'search', reasons: [], main: '', note: '', city: S.fCity || '', purchaseTime: S.fWhen || '', legal: S.legal, payment: S.pay, consentAt: new Date().toISOString() }; REQS.unshift(r);
+    if (!saveRequests()) { REQS.shift(); delete S.cls[key]; return; }
+    go('request', { requestKey: key });
+    S.fName = ''; S.fPhone = ''; S.fModel = ''; S.fBudget = ''; S.fConsent = false;
+    say(online() ? 'Запрос создан. Сохраняем в Supabase' : 'Запрос сохранён в этом браузере');
+  },
   rec: function () { set({ recording: !S.recording }); },
   parse: function () { set({ parsed: true, recording: false }); },
   trim: function (v) { set({ trim: v === 'Любая' ? 'любая' : v }); },
   sendSup: startSearch,
   callClient: function () { say('Звонок клиенту'); },
-  remind: function (v) { say('Напоминание отправлено ' + v); },
+  remind: function (v) { say('Автоматические напоминания ещё не подключены'); },
   deals: function () { set({ deals: !S.deals }); },
   fold: function (v) { var f = Object.assign({}, S.fold); f[v] = !f[v]; set({ fold: f }); },
   jump: function (v) {
@@ -1228,10 +1282,27 @@ var A = {
   expand: function (v) { var o = Object.assign({}, S.open); o[v] = !o[v]; pr(v); set({ open: o }); },
   detail: function (v) { set({ detail: v === '1' }); },
   offer: function (v) { go('offer', { sel: v }); },
-  askApprove: function (v) { var p = pr(v); p.appr = 'pending'; p.apprV = p.v; p.hist.push([p.v, 'запрос подтверждения', 'Марина К.']); render(); say('Запрос ушёл владельцу'); },
+  askApprove: function (v) { var p = pr(v); p.appr = 'pending'; p.apprV = p.v; p.hist.push([p.v, 'запрос подтверждения', 'Марина К.']); render(); say('Подтверждение запрошено в вашем демосценарии'); },
   approve: function (v) { var p = pr(v); p.appr = 'ok'; p.hist.push([p.v, 'подтверждено', 'Владелец']); S.log = [['Цена клиенту', 'подтверждено', 'good', BY[v].car + ', ' + rub(p.v), 'сегодня']].concat(S.log); render(); say('Цена подтверждена'); },
   reject: function (v) { var p = pr(v); p.appr = 'rejected'; p.hist.push([p.v, 'отклонено', 'Владелец']); render(); say('Цена отклонена'); },
   toClient: function () { if (!pickedList().length) { say('Отметьте варианты галочкой'); return; } go('client'); },
+  printOffer: function () { return downloadCurrentOffer(); },
+  saveOfferVersion: function () {
+    var model = offerModel(); if (!model) return;
+    S.offers.push({ id: 'offer-' + Date.now(), model: model });
+    S.kpVer = S.offers.length; render(); say('Версия КП сохранена');
+  },
+  offerArchive: function () { go('offerArchive'); },
+  savedOffer: function (v) { go('savedOffer', { offerId: v }); },
+  downloadSavedOffer: function (v) { var saved = S.offers.filter(function (o) { return o.id === v; })[0]; if (saved) return generateOfferPdf(saved.model); },
+  clearLetterhead: function () { set({ letterheadId: '' }); },
+  copyOffer: function () {
+    var list = pickedList();
+    if (list.some(function (c) { return !sendable(c.id); })) { say('Сначала подтвердите цену'); return; }
+    var text = list.map(function (c, i) { return (i + 1) + '. ' + c.car + ', ' + c.meta.split(' · ').join(', ') + ', ' + rub(pr(c.id).v) + (c.kind === 'import' ? ', под заказ ' + c.term : ', в наличии в РФ'); }).join('\n');
+    if (!navigator.clipboard) { say('Копирование недоступно в этом браузере'); return; }
+    navigator.clipboard.writeText(text).then(function () { say('Текст скопирован'); }).catch(function () { say('Браузер не разрешил копирование'); });
+  },
   sendMode: function (v) { set({ sendMode: v }); },
   markSent: function () {
     var bl = pickedList().filter(function (c) { return !sendable(c.id); });
@@ -1279,9 +1350,11 @@ var A = {
   stSave: function () {
     var d = S.draft;
     if (d.status === 'lost' && !d.reasons.length) { say('Выберите причину'); return; }
+    if (d.status === 'lost' && d.reasons.indexOf('Другое') >= 0 && !d.note.trim()) { say('Добавьте комментарий для причины Другое'); return; }
     setCl(S.stKey, { status: d.status, reasons: d.status === 'lost' ? d.reasons : [], main: d.status === 'lost' ? d.main : '', note: d.note });
     back();
-    say(d.status === 'won' ? 'Заказ создан' : 'Статус ' + CST[d.status][0]);
+    if (REQS.some(function (r) { return r.key === S.stKey && r.custom; })) saveRequests();
+    say(d.status === 'won' ? 'Статус Заказал сохранён' : 'Статус ' + CST[d.status][0]);
   },
   stab: function (v) { set({ stab: v }); },
   setv: function (v, el) { var p = {}; p[el.dataset.k] = v; set(p); },
@@ -1290,10 +1363,12 @@ var A = {
     var lim = { sup: [1, 24], alarm: [2, 48], client: [1, 14], lost: [1, 30], fresh: [15, 360] }[k], step = k === 'fresh' ? 15 : 1;
     var t = Object.assign({}, S.t); t[k] = Math.max(lim[0], Math.min(lim[1], t[k] + d * step)); set({ t: t });
   },
+  togglePriceRule: function (v) { if (v !== 'medianEnabled' && v !== 'marginEnabled') return; var rule = Object.assign({}, S.rule); rule[v] = rule[v] === false; set({ rule: rule }); },
   bumpRule: function (v, el) { var r = Object.assign({}, S.rule); r[el.dataset.k] = Math.max(0, Math.min(30, r[el.dataset.k] + (+v))); set({ rule: r }); },
   bumpKp: function (v) { set({ kpDays: Math.max(1, Math.min(30, S.kpDays + (+v))) }); },
+  editReason: function (v) { var next = window.prompt('Новое название причины. Пустая строка скроет её из списка. История клиентов сохранится.', v); if (next === null) return; next = next.trim(); if (v === 'Другое') { say('Причина Другое остаётся для комментариев'); return; } if (next && next !== v && S.groups.some(function (g) { return g[1].indexOf(next) >= 0; })) { say('Такая причина уже есть'); return; } set({ groups: S.groups.map(function (g) { return [g[0], g[1].map(function (r) { return r === v ? next : r; }).filter(Boolean)]; }) }); },
   addReason: function () {
-    var r = S.newReason.trim(); if (!r) return;
+    var r = S.newReason.trim(); if (!r) return; if (S.groups.some(function (g) { return g[1].indexOf(r) >= 0; })) { say('Такая причина уже есть'); return; }
     var g = S.groups.map(function (x) { return [x[0], x[1].slice()]; }); g[g.length - 1][1].splice(g[g.length - 1][1].length - 1, 0, r);
     set({ groups: g, newReason: '' }); say('Причина добавлена');
   },
@@ -1348,6 +1423,7 @@ app.addEventListener('click', function (e) {
   var fn = A[el.dataset.a];
   if (fn) fn(el.dataset.v, el);
 });
+app.addEventListener('change', function (e) { if (e.target.id === 'letterhead') uploadLetterhead(e.target.files && e.target.files[0]); });
 app.addEventListener('input', function (e) {
   var t = e.target, k = t.dataset.in;
   if (!k) return;
@@ -1363,6 +1439,8 @@ app.addEventListener('input', function (e) {
     box.insertAdjacentHTML('afterbegin', cellsHtml());
     document.getElementById('confirmBtn').className = 'fab ' + (S.code.length === 6 ? 'on' : 'off');
     if (S.code.length === 6) later(function () { set({ screen: homeOf(S.role), stack: [], loginStep: 0, code: '' }); }, 350);
+  } else if (k === 'searchQuery') { S.searchQuery = t.value; var caret = t.selectionStart; render(); var search = document.getElementById('requestSearch'); if (search) { search.focus(); search.setSelectionRange(caret, caret); }
+  } else if (k.indexOf('dealer.') === 0) { S.dealer[k.slice(7)] = t.value; saveDemoSettings();
   } else if (k === 'price') {
     var digits = t.value.replace(/\D/g, '');
     var p = pr(S.sel); p.v = +digits || 0;
@@ -1374,12 +1452,184 @@ app.addEventListener('input', function (e) {
   else if (k === 'stNote') S.draft.note = t.value;
   else if (k.indexOf('e.') === 0) S.edit[k.slice(2)] = t.value;
   else S[k] = t.value;
+  scheduleWorkspace();
 });
 
+function offerModel(preview) {
+  var list = pickedList();
+  if (!list.length) { if (!preview) say('Отметьте варианты галочкой'); return null; }
+  if (!preview && list.some(function (c) { return !sendable(c.id); })) { say('Сначала подтвердите цену'); return null; }
+  var now = new Date();
+  return {
+    createdAt: now.toISOString(), validUntil: new Date(now.getTime() + S.kpDays * 86400000).toISOString(),
+    client: S.cls.camry.name, manager: S.me ? S.me.name : ROLES[S.role],
+    dealer: Object.assign({}, S.dealer), templateId: S.letterheadId,
+    cars: list.map(function (c) { return { title: c.car, description: scrubContacts(c.meta), price: pr(c.id).v, term: c.kind === 'import' ? 'Под заказ, ' + c.term : 'В наличии в РФ' }; })
+  };
+}
+function scrubContacts(text) {
+  return String(text || '').replace(/https?:\/\/\S+|www\.\S+|[\w.+-]+@[\w.-]+\.[a-z]{2,}|@[a-z0-9_]{3,}/gi, '[контакты удалены]').replace(/(?:\+?\d[\d\s()\-]{8,}\d)/g, '[телефон удалён]');
+}
+function offerPreview(model) {
+  var template = S.templates[model.templateId];
+  return '<div class="paper">' + (template ? '<div class="cm">Бланк ' + esc(template.name) + ' будет добавлен в PDF</div>' : '') +
+    '<b>' + esc(model.dealer.name || 'Автоподбор') + '</b><h3>Коммерческое предложение</h3><p>Для ' + esc(model.client) + ' · ' + new Date(model.createdAt).toLocaleDateString('ru-RU') + '</p>' +
+    model.cars.map(function (c, i) { return '<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px"><b>' + (i + 1) + '. ' + esc(c.title) + '</b><p>' + esc(c.description) + '</p><strong>' + rub(c.price) + '</strong><p>' + esc(c.term) + '</p></div>'; }).join('') +
+    '<p style="margin-top:16px">Цена действует до ' + new Date(model.validUntil).toLocaleDateString('ru-RU') + '</p><p>' + esc(model.dealer.inn ? 'ИНН ' + model.dealer.inn : '') + '</p><p>' + esc(model.dealer.address) + '</p><p>' + esc(model.dealer.phone) + '</p><p>Менеджер ' + esc(model.manager) + '</p></div>';
+}
+function vOfferArchive() {
+  return '<div class="scroll">' + (!S.offers.length ? '<div class="card"><b>Пока нет сохранённых КП</b><span class="cm">Выберите варианты в запросе и сохраните версию предложения.</span></div>' : S.offers.slice().reverse().map(function (o, i) {
+    return '<button class="card" style="text-align:left;border:0;font:inherit" data-a="savedOffer" data-v="' + esc(o.id) + '"><b>КП ' + (S.offers.length - i) + '</b><span>' + esc(o.model.client) + '</span><span class="cm">' + new Date(o.model.createdAt).toLocaleString('ru-RU') + ' · ' + o.model.cars.length + ' вариантов</span></button>';
+  }).join('')) + '</div>';
+}
+function vSavedOffer() {
+  var saved = S.offers.filter(function (o) { return o.id === S.offerId; })[0];
+  if (!saved) return '<div class="scroll"><div class="card">Версия не найдена</div></div>';
+  return '<div class="scroll">' + offerPreview(saved.model) + '<button class="btn b-acc" data-a="downloadSavedOffer" data-v="' + esc(saved.id) + '">Скачать эту версию PDF</button></div>';
+}
+function generateOfferPdf(model) {
+  if (S.pdfBusy) return Promise.resolve();
+  if (!window.PodborPdf) { say('Генератор PDF ещё загружается. Повторите через секунду'); return Promise.resolve(); }
+  S.pdfBusy = true; say('Готовим PDF');
+  var data = Object.assign({}, model, { letterhead: S.templates[model.templateId] || null });
+  return window.PodborPdf.createOffer(data).then(function (bytes) { window.PodborPdf.download(bytes, 'podbor-kp-' + model.createdAt.slice(0, 10) + '.pdf'); say('PDF готов. Проверьте загрузки'); }).catch(function (e) { say('Не удалось создать PDF. ' + e.message); }).then(function () { S.pdfBusy = false; });
+}
+function downloadCurrentOffer() { var model = offerModel(); return model ? generateOfferPdf(model) : Promise.resolve(); }
+function uploadLetterhead(file) {
+  if (!file) return;
+  if (['application/pdf', 'image/png', 'image/jpeg'].indexOf(file.type) < 0 || file.size > 2 * 1024 * 1024) { say('Нужен PDF, PNG или JPEG размером до 2 МБ'); return; }
+  var reader = new FileReader();
+  reader.onerror = function () { say('Не удалось прочитать файл'); };
+  reader.onload = async function () {
+    try {
+      var data = reader.result;
+      var bytes = Uint8Array.from(atob(data.split(',')[1]), function (c) { return c.charCodeAt(0); });
+      if (file.type === 'application/pdf' && String.fromCharCode.apply(null, bytes.slice(0, 5)) !== '%PDF-') throw new Error('Неверный формат PDF');
+      if (file.type === 'image/png' && (bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71)) throw new Error('Неверный формат PNG');
+      if (file.type === 'image/jpeg' && (bytes[0] !== 255 || bytes[1] !== 216)) throw new Error('Неверный формат JPEG');
+      if (file.type === 'application/pdf') {
+        if (!window.PDFLib) throw new Error('Генератор PDF ещё загружается');
+        var pdf = await window.PDFLib.PDFDocument.load(bytes); if (pdf.getPageCount() < 1) throw new Error('PDF пуст');
+      }
+      var hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+      var used = (S.offers || []).map(function (o) { return o.model.templateId; }); var templates = {}; Object.keys(S.templates).forEach(function (k) { if (used.indexOf(k) >= 0) templates[k] = S.templates[k]; }); templates[hash] = { name: file.name, type: file.type, data: data };
+      var next = snapshotWorkspace(); next.settings.templates = templates; next.settings.letterheadId = hash; if (new TextEncoder().encode(JSON.stringify(next)).length > 5400000) throw new Error('Общий объём бланков слишком большой. Выберите файл меньшего размера');
+      set({ templates: templates, letterheadId: hash }); say('Бланк загружен');
+    } catch (e) { say('Не удалось загрузить бланк. ' + e.message); }
+  };
+  reader.readAsDataURL(file);
+}
+
+/* Account-specific prototype state. Telegram identity is never persisted here. */
+var workspaceReady = false, workspaceRevision = 0, workspaceTimer = null;
+var workspaceSaved = '', workspaceSaving = false, workspaceConflict = false;
+var workspaceStatus = '', workspaceLastError = '', workspaceCacheWarning = '';
+function workspaceKey() { return customKey() + '-workspace'; }
+function snapshotWorkspace() {
+  var settings = {};
+  DEMO_SETTINGS.forEach(function (k) { settings[k] = S[k]; });
+  return {
+    version: 1, settings: settings,
+    requests: REQS.filter(function (r) { return r.custom; }), clients: S.cls,
+    prices: S.prices, picked: S.picked, callRes: S.callRes, hist: S.hist,
+    sent: S.sent, offers: S.offers || [], log: S.log,
+    supArrived: S.supArrived, stockOn: S.stockOn, marketOn: S.marketOn
+  };
+}
+function applyWorkspace(data) {
+  if (!data || data.version !== 1) return;
+  var objectKeys = ['prices', 'picked', 'callRes'];
+  objectKeys.forEach(function (k) { if (data[k] && typeof data[k] === 'object' && !Array.isArray(data[k])) S[k] = data[k]; });
+  ['hist', 'offers', 'log'].forEach(function (k) { if (Array.isArray(data[k])) S[k] = data[k]; });
+  ['sent', 'stockOn', 'marketOn'].forEach(function (k) { if (typeof data[k] === 'boolean') S[k] = data[k]; });
+  if (Number.isInteger(data.supArrived) && data.supArrived >= 0 && data.supArrived <= 4) S.supArrived = data.supArrived;
+  if (data.settings && typeof data.settings === 'object') DEMO_SETTINGS.forEach(function (k) {
+    if (Object.prototype.hasOwnProperty.call(data.settings, k) && typeof data.settings[k] === typeof S[k]) S[k] = data.settings[k];
+  });
+  if (data.clients && typeof data.clients === 'object') Object.keys(data.clients).forEach(function (k) {
+    var c = data.clients[k];
+    if (/^(local-[a-z0-9-]+|camry|sorento|bmw|palisade|gle|db\d+)$/.test(k) && c && CST[c.status] && Array.isArray(c.reasons)) S.cls[k] = c;
+  });
+  REQS = REQS.filter(function (r) { return !r.custom; });
+  if (Array.isArray(data.requests)) data.requests.forEach(function (r) {
+    if (r && /^local-[a-z0-9-]+$/.test(r.key) && S.cls[r.key] && !REQS.some(function (x) { return x.key === r.key; })) REQS.unshift(r);
+  });
+  S.kpVer = (S.offers || []).length;
+}
+function cacheWorkspace(data, dirty) {
+  try { localStorage.setItem(workspaceKey(), JSON.stringify({ state: data, revision: workspaceRevision, dirty: dirty })); return true; }
+  catch (e) { workspaceCacheWarning = 'Резервная копия на устройстве недоступна'; return false; }
+}
+function loadWorkspace() {
+  workspaceReady = false;
+  if (!online()) {
+    try { var cached = JSON.parse(localStorage.getItem(workspaceKey()) || 'null'); if (cached) applyWorkspace(cached.state); } catch (e) {}
+    workspaceReady = true; workspaceSaved = JSON.stringify(snapshotWorkspace()); return Promise.resolve();
+  }
+  return call('workspace.get').then(function (j) {
+    workspaceRevision = j.revision;
+    var cached = null;
+    try { cached = JSON.parse(localStorage.getItem(workspaceKey()) || 'null'); } catch (e) {}
+    if (j.state) applyWorkspace(j.state);
+    workspaceSaved = JSON.stringify(snapshotWorkspace());
+    if (cached && cached.dirty && cached.state) {
+      applyWorkspace(cached.state);
+      workspaceConflict = cached.revision !== workspaceRevision;
+      workspaceLastError = workspaceConflict ? 'Есть изменения на другом устройстве. Ваша локальная копия сохранена.' : 'Есть несохранённые изменения. Нажмите Повторить сохранение.';
+      workspaceStatus = 'error';
+    } else { cacheWorkspace(snapshotWorkspace(), false); workspaceStatus = 'saved'; }
+    workspaceReady = true;
+  });
+}
+function scheduleWorkspace() {
+  if (!workspaceReady || !S.me && online()) return;
+  var data = snapshotWorkspace(), text = JSON.stringify(data);
+  if (text === workspaceSaved) return;
+  cacheWorkspace(data, true);
+  if (!online()) { workspaceSaved = text; return; }
+  if (workspaceConflict || workspaceLastError) return;
+  workspaceStatus = 'pending'; updateSyncIndicator();
+  clearTimeout(workspaceTimer);
+  workspaceTimer = setTimeout(function () { flushWorkspace(); }, 650);
+}
+function flushWorkspace() {
+  if (!workspaceReady || !online() || workspaceSaving || workspaceConflict) return Promise.resolve();
+  var data = snapshotWorkspace(), text = JSON.stringify(data);
+  if (text === workspaceSaved) return Promise.resolve();
+  workspaceSaving = true; workspaceStatus = 'saving'; updateSyncIndicator();
+  return call('workspace.save', { state: data, revision: workspaceRevision }).then(function (j) {
+    workspaceRevision = j.revision; workspaceSaved = text; workspaceStatus = 'saved'; workspaceLastError = '';
+    cacheWorkspace(snapshotWorkspace(), JSON.stringify(snapshotWorkspace()) !== text);
+  }).catch(function (e) {
+    workspaceStatus = 'error'; workspaceConflict = e.code === 'workspace_conflict';
+    workspaceLastError = workspaceConflict ? 'На другом устройстве уже есть новая версия. Локальная копия сохранена.' : errText(e);
+    if (!cacheWorkspace(snapshotWorkspace(), true)) workspaceLastError += ' Не закрывайте приложение, резервная копия не сохранена.';
+  }).then(function () { workspaceSaving = false; updateSyncIndicator(); if (!workspaceLastError) scheduleWorkspace(); });
+}
+function syncIndicator() {
+  if (!online() || !workspaceReady) return '';
+  var text = workspaceStatus === 'error' ? workspaceLastError : (workspaceStatus === 'saving' || workspaceStatus === 'pending') ? 'Сохраняем…' : 'Сохранено в Supabase · только ваша учётная запись';
+  return '<div id="syncState" style="padding:7px 16px;font-size:12px;background:var(--accent-soft);color:var(--text-2);flex:none">' + esc(text) +
+    (workspaceStatus === 'error' ? '<button class="btn b-sm" style="margin-top:6px" data-a="' + (workspaceConflict ? 'loadServerState' : 'retryWorkspace') + '">' + (workspaceConflict ? 'Загрузить серверную версию' : 'Повторить сохранение') + '</button>' : '') + '</div>';
+}
+function updateSyncIndicator() {
+  var el = document.getElementById('syncState');
+  if (el) el.outerHTML = syncIndicator();
+}
+A.retryWorkspace = function () { workspaceLastError = ''; return flushWorkspace(); };
+A.loadServerState = function () {
+  if (!window.confirm('Загрузить серверную версию? Текущая копия останется в резервной копии на этом устройстве.')) return;
+  try { localStorage.setItem(workspaceKey() + '-backup', JSON.stringify(snapshotWorkspace())); } catch (e) { say('Не удалось сохранить резервную копию. Загрузка отменена'); return; }
+  workspaceConflict = false; workspaceLastError = '';
+  return call('workspace.get').then(function (j) { applyWorkspace(j.state); workspaceRevision = j.revision; workspaceSaved = JSON.stringify(snapshotWorkspace()); cacheWorkspace(snapshotWorkspace(), false); workspaceStatus = 'saved'; render(); }).catch(function (e) { workspaceStatus = 'error'; workspaceLastError = errText(e); updateSyncIndicator(); });
+};
+window.addEventListener('pagehide', function () { if (workspaceReady && online()) cacheWorkspace(snapshotWorkspace(), JSON.stringify(snapshotWorkspace()) !== workspaceSaved); });
+
+if (!online()) restoreDemoSettings();
 S.users = loadUsers(); S.accFilter = 'all'; S.edit = null;
 if (TG) { try { TG.ready(); TG.expand(); } catch (err) {} }
 S.wasWide = isWide();
-if (online()) enterOnline(); else enter();
+if (online()) enterOnline(); else { enter(); loadRequests(); loadWorkspace(); }
 render();
 })();
 </script>

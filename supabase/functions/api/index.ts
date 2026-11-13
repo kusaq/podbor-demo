@@ -1,18 +1,10 @@
-// Единственная серверная точка мини-аппа.
-// Каждый запрос несёт initData от Telegram. Функция проверяет подпись токеном бота,
-// находит человека в app_users по Telegram ID и только потом что-то делает.
-//
-// Секреты (Supabase → Edge Functions → Secrets):
-//   BOT_TOKEN    токен бота от @BotFather
-//   BOOT_ADMINS  Telegram ID через запятую: их пустит админом даже на пустой таблице
-// SUPABASE_URL и SUPABASE_SERVICE_ROLE_KEY Supabase подставляет сам.
-//
-// Фронт шлёт публичный ключ проекта (publishable), его пропускает шлюз Supabase.
-// Доступ решает не ключ, а проверка initData ниже.
+// Единственная серверная точка мини-аппа. Исходник: supabase/functions/api/index.ts
+// Секреты: BOT_TOKEN, BOOT_ADMINS. фронт шлёт publishable-ключ.
 
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
-const BOT_TOKEN = Deno.env.get("BOT_TOKEN") ?? "";
+const BOT_TOKEN = (Deno.env.get("BOT_TOKEN") ?? "").trim();
+console.log("bot token", { length: BOT_TOKEN.length, looksValid: /^\d+:[A-Za-z0-9_-]{30,}$/.test(BOT_TOKEN), botId: BOT_TOKEN.split(":")[0] });
 const BOOT_ADMINS = (Deno.env.get("BOOT_ADMINS") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 const MAX_AGE_SEC = 24 * 60 * 60;
 const ROLES = ["manager", "owner", "supplier", "admin"];
@@ -38,7 +30,6 @@ const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "
 
 type TgUser = { id: number; first_name?: string; last_name?: string };
 
-// Проверка по документации Telegram: «Validating data received via the Mini App».
 async function verifyInitData(initData: string): Promise<TgUser | null> {
   if (!BOT_TOKEN || !initData) return null;
   const params = new URLSearchParams(initData);
@@ -50,9 +41,15 @@ async function verifyInitData(initData: string): Promise<TgUser | null> {
     .map(([k, v]) => `${k}=${v}`)
     .join("\n");
   const secret = await hmac(enc.encode("WebAppData"), BOT_TOKEN);
-  if (hex(await hmac(secret, checkString)) !== hash) return null;
+  if (hex(await hmac(secret, checkString)) !== hash) {
+    console.log("init data signature mismatch", { fields: [...params.keys()], botId: BOT_TOKEN.split(":")[0] });
+    return null;
+  }
   const age = Date.now() / 1000 - Number(params.get("auth_date"));
-  if (!(age >= 0 && age < MAX_AGE_SEC)) return null;
+  if (!(age >= 0 && age < MAX_AGE_SEC)) {
+    console.log("init data too old", { age });
+    return null;
+  }
   try {
     return JSON.parse(params.get("user") ?? "null");
   } catch {
@@ -75,10 +72,19 @@ Deno.serve(async (req) => {
   if (!tg) return json({ error: "bad_init_data" }, 401);
   const myId = String(tg.id);
 
-  let { data: me } = await db.from("app_users").select("*").eq("tg_id", myId).maybeSingle();
+  const lookup = await db.from("app_users").select("*").eq("tg_id", myId).maybeSingle();
+  if (lookup.error) {
+    console.error("access lookup failed", { code: lookup.error.code, message: lookup.error.message });
+    return json({ error: "db_lookup_failed" }, 500);
+  }
+  let me = lookup.data;
   if (!me && BOOT_ADMINS.includes(myId)) {
     const name = [tg.first_name, tg.last_name].filter(Boolean).join(" ") || "Админ";
     const ins = await db.from("app_users").insert({ tg_id: myId, name, role: "admin", active: true }).select().single();
+    if (ins.error) {
+      console.error("admin bootstrap failed", { code: ins.error.code, message: ins.error.message });
+      return json({ error: "db_bootstrap_failed" }, 500);
+    }
     me = ins.data;
   }
   if (!me || !me.active) return json({ error: "no_access" }, 403);
@@ -88,10 +94,40 @@ Deno.serve(async (req) => {
 
   if (action === "me") {
     const mocks = await db.from("mocks").select("id, kind, data").order("created_at");
+    if (mocks.error) {
+      console.error("mocks lookup failed", { code: mocks.error.code, message: mocks.error.message });
+      return json({ error: "db_mocks_failed" }, 500);
+    }
     return json({ me, mocks: mocks.data ?? [] });
   }
 
-  // Дальше только управление доступами: админ и владелец.
+
+  // Personal prototype state. Identity always comes from verified Telegram data.
+  if (action === "workspace.get") {
+    const result = await db.from("user_workspaces").select("state, revision, updated_at").eq("user_id", myId).maybeSingle();
+    if (result.error) return json({ error: "db_workspace_failed" }, 500);
+    return json({ state: result.data?.state ?? null, revision: result.data?.revision ?? 0 });
+  }
+
+  if (action === "workspace.save") {
+    const state = p.state;
+    const revision = p.revision;
+    if (!state || typeof state !== "object" || Array.isArray(state) ||
+        !Number.isSafeInteger(revision) || Number(revision) < 0) return json({ error: "bad_workspace" }, 400);
+    if (enc.encode(JSON.stringify(state)).length > 5500000) return json({ error: "workspace_too_large" }, 413);
+    const allowed = ["version", "settings", "requests", "clients", "prices", "picked", "callRes", "hist", "sent", "offers", "log", "supArrived", "stockOn", "marketOn"];
+    if (Object.keys(state).some((k) => !allowed.includes(k)) || (state as Record<string, unknown>).version !== 1) {
+      return json({ error: "bad_workspace" }, 400);
+    }
+    const record = { state, revision: Number(revision) + 1, updated_at: new Date().toISOString() };
+    const result = revision === 0
+      ? await db.from("user_workspaces").insert({ ...record, user_id: myId }).select("revision").single()
+      : await db.from("user_workspaces").update(record).eq("user_id", myId).eq("revision", revision).select("revision").maybeSingle();
+    if (result.error?.code === "23505" || (!result.error && !result.data)) return json({ error: "workspace_conflict" }, 409);
+    if (result.error) return json({ error: "db_workspace_failed" }, 500);
+    return json({ revision: result.data.revision });
+  }
+
   const canManage = me.role === "admin" || me.role === "owner";
   if (!canManage) return json({ error: "forbidden" }, 403);
 
@@ -110,8 +146,6 @@ Deno.serve(async (req) => {
     if (!/^-?\d{5,15}$/.test(tgId)) return json({ error: "bad_id" }, 400);
     if (!name) return json({ error: "bad_name" }, 400);
     if (!ROLES.includes(role)) return json({ error: "bad_role" }, 400);
-
-    // Владелец не раздаёт и не трогает админов, это делает только админ.
     if (me.role !== "admin") {
       if (role === "admin") return json({ error: "forbidden" }, 403);
       if (orig) {
@@ -119,9 +153,7 @@ Deno.serve(async (req) => {
         if (t.data?.role === "admin") return json({ error: "forbidden" }, 403);
       }
     }
-    // Себя нельзя выключить или понизить, иначе можно остаться без админа.
     if (orig === myId && (!active || role !== me.role)) return json({ error: "self" }, 400);
-
     if (!orig || orig !== tgId) {
       const ex = await db.from("app_users").select("tg_id").eq("tg_id", tgId).maybeSingle();
       if (ex.data) return json({ error: "exists" }, 409);
