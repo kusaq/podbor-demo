@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="var(--background)">
 <title>Подбор</title>
-<meta name="podbor-version" content="2026-11-13-workspace-v1">
+<meta name="podbor-version" content="2026-11-13-workspace-v2">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script defer src="assets/pdf-lib.min.js"></script>
 <script defer src="assets/fontkit.umd.min.js"></script>
@@ -1546,6 +1546,7 @@ function applyWorkspace(data) {
   if (data.settings && typeof data.settings === 'object') DEMO_SETTINGS.forEach(function (k) {
     if (Object.prototype.hasOwnProperty.call(data.settings, k) && typeof data.settings[k] === typeof S[k]) S[k] = data.settings[k];
   });
+  Object.keys(S.cls).forEach(function (k) { if (/^local-/.test(k)) delete S.cls[k]; });
   if (data.clients && typeof data.clients === 'object') Object.keys(data.clients).forEach(function (k) {
     var c = data.clients[k];
     if (/^(local-[a-z0-9-]+|camry|sorento|bmw|palisade|gle|db\d+)$/.test(k) && c && CST[c.status] && Array.isArray(c.reasons)) S.cls[k] = c;

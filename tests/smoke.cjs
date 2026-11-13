@@ -2,7 +2,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const html=fs.readFileSync(require('path').join(__dirname, '..', 'index.html'),'utf8');
 let code=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(m=>m[1]).find(t=>t.includes("'use strict'"));
 new vm.Script(code);
-code=code.replace(/\}\)\(\);\s*$/, 'globalThis.test = {S,A,VIEWS,render,priceState,pr,restoreDemoSettings,homeOf,isAdmin};})();');
+code=code.replace(/\}\)\(\);\s*$/, 'globalThis.test = {S,A,VIEWS,render,priceState,pr,restoreDemoSettings,homeOf,isAdmin,applyWorkspace,snapshotWorkspace};})();');
 const store=new Map(),app={innerHTML:'',querySelectorAll:()=>[],addEventListener(){},classList:{toggle(){}}};
 const ctx={console,URLSearchParams,location:{search:''},document:{getElementById:id=>id==='app'?app:null},localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v)},setTimeout:()=>0,clearTimeout(){},navigator:{clipboard:{writeText:async()=>{}}},matchMedia:()=>({matches:false})};
 ctx.window={addEventListener(){},innerWidth:390,matchMedia:ctx.matchMedia};
@@ -21,4 +21,5 @@ S.fName='Тест'; S.fPhone='89991234567'; S.fModel='Kia Test'; S.fBudget='4000
 S.fName='Дубль'; S.fPhone='+7 999 123 45 67'; S.fModel='Другая'; S.fBudget='3000000'; S.fConsent=true; A.leadCreate(); assert(S.toast.includes('уже есть'));
 A.openStatus(key); A.stPick('lost'); A.stReason('Другое'); A.stSave(); assert(S.toast.includes('комментарий'));
 S.draft.note='Причина'; A.stSave(); assert.equal(S.cls[key].status,'lost');
+const remote=JSON.parse(JSON.stringify(ctx.test.snapshotWorkspace()));remote.requests=[];delete remote.clients[key];ctx.test.applyWorkspace(remote);assert.equal(S.cls[key],undefined);
 console.log('PASS: syntax, four cabinets, admin identity, non-admin guard, 18 screens, 9 settings tabs, cost floor and settings persistence');
