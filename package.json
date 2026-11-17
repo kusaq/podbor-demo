@@ -10,7 +10,8 @@
     "test": "node tests/smoke.cjs && node tests/api.cjs && node tests/desktop-api.cjs",
     "test:browser": "node tests/browser.cjs",
     "test:crm": "node tests/crm-browser.cjs",
-    "test:domain": "node tests/domain-browser.cjs"
+    "test:domain": "node tests/domain-browser.cjs",
+    "test:review": "node tests/review-browser.cjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"
