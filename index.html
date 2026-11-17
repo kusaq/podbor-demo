@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="var(--background)">
 <title>Подбор</title>
-<meta name="podbor-version" content="2026-11-13-crm-v1">
+<meta name="podbor-version" content="2026-11-17-backend-v1">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script defer src="assets/pdf-lib.min.js"></script>
 <script defer src="assets/fontkit.umd.min.js"></script>
@@ -638,7 +638,7 @@ function vRequest() {
   var c = S.cls[r.key];
   return '<div class="scroll"><div class="card"><h2>' + esc(r.title) + '</h2><span class="cm">' + esc(c.name) + '</span>' + clientStatusChip(r.key, true) + '<dl class="kv"><dt>Телефон</dt><dd>' + esc(c.phone || 'Не указан') + '</dd><dt>Поколение</dt><dd>' + esc(r.generation || 'Уточнить') + '</dd><dt>Годы</dt><dd>' + esc(r.years || 'Уточнить') + '</dd><dt>Пробег</dt><dd>' + esc(r.mileage || 'Уточнить') + '</dd><dt>Бюджет</dt><dd>' + (r.budget ? rub(r.budget) : 'Уточнить') + '</dd><dt>Пожелания</dt><dd>' + esc(r.spec || 'Не указаны') + '</dd><dt>Ответственный</dt><dd>' + esc(r.mgr || 'Не назначен') + '</dd>' + (r.nextContactAt ? '<dt>Следующий контакт</dt><dd>' + new Date(r.nextContactAt).toLocaleString('ru-RU') + '</dd>' : '') + '</dl></div>' +
     (r.sourceText ? '<div class="card"><b>Исходное сообщение</b><p style="white-space:pre-wrap">' + esc(r.sourceText) + '</p></div>' : '') +
-    '<div class="card"><b>Источники поиска</b><p class="cm">МойСклад, поставщики и объявления пока не подключены. Результатов поиска для этого запроса нет.</p></div><button class="btn white" data-a="openCard">Посмотреть пример подбора Toyota Camry</button></div>';
+    (r.crmId ? realOptionsHtml(r.crmId) : '') + '<div class="card"><b>Источники поиска</b><p class="cm">Автоматический поиск пока не подключён. Варианты можно добавить вручную в десктопной CRM.</p></div><button class="btn white" data-a="openCard">Посмотреть пример подбора Toyota Camry</button></div>';
 }
 
 function anketa() {
@@ -1522,6 +1522,19 @@ function uploadLetterhead(file) {
   };
   reader.readAsDataURL(file);
 }
+
+function realOptionsHtml(requestId) {
+  var options = S.realRequestId === requestId ? S.realOptions || [] : [];
+  return '<div class="card"><div class="row sb"><b>Варианты из CRM</b><button class="btn b-sm" data-a="loadRealOptions" data-v="' + esc(requestId) + '">Обновить</button></div>' + (options.length ? options.filter(function (o) { return !o.archived; }).map(function (o) {
+    return '<div style="padding:12px 0;border-top:1px solid var(--border)"><b>' + esc(o.title) + '</b><div class="cm">Себестоимость ' + rub(o.total_cost) + '</div><div>Клиенту ' + rub(o.client_price) + '</div><span class="cm">' + (o.evaluation && o.evaluation.can_send ? 'Можно включать в КП' : 'Требуется согласование') + '</span></div>';
+  }).join('') : '<span class="cm">Обновите список. Создание вариантов и согласование доступны в CRM на компьютере.</span>') + '<button class="btn white" data-a="go" data-v="desktopLogin">Открыть CRM на компьютере</button></div>';
+}
+A.loadRealOptions = function (requestId) {
+  if (!online()) return;
+  return call('backend.request.get', { request_id: requestId }).then(function (j) { if (S.screen !== 'request') return; var r = REQS.filter(function (r) { return r.key === S.requestKey; })[0]; if (!r || r.crmId !== requestId) return; S.realRequestId = requestId; S.realOptions = j.options || []; render(); }).catch(function (e) { say(errText(e)); });
+};
+var openCrmRequest = A.openRequest;
+A.openRequest = function (key) { openCrmRequest(key); var r = REQS.filter(function (r) { return r.key === key; })[0]; if (r && r.crmId && online()) return A.loadRealOptions(r.crmId); };
 
 /* Shared CRM records are authoritative on the server, separate from personal demo state. */
 function crmKey(id) { return 'local-crm-' + id; }

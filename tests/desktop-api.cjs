@@ -23,5 +23,13 @@ async function signature(){const p=new URLSearchParams({auth_date:String(Math.fl
  r=await call('desktop.code');const expiredCode=(await r.json()).code;[...codes.values()][0].expires_at='2000-01-01T00:00:00Z';assert.equal((await call('desktop.exchange',{code:expiredCode},{})).status,401);
  r=await call('desktop.code');const freshCode=(await r.json()).code;r=await call('desktop.exchange',{code:freshCode},{});const freshToken=(await r.json()).sessionToken;[...sessions.values()][0].expires_at='2000-01-01T00:00:00Z';assert.equal((await call('me',{}, {desktopSession:freshToken})).status,401);
  assert.equal((await call('desktop.exchange',{code:'2345-6789-ABCD'},{})).status,401);
+ const requestId='22222222-2222-4222-8222-222222222222';
+ const variant={request_id:requestId,title:'Server variant',scenario:'rf',currency:'RUB',input:{purchase:1000000,base_rate:1,logistics:0,duty:0,recycling:0,documents:0,commission:0},client_price:1200000,market_median:1300000};
+ assert.equal((await call('backend.option.save',variant)).status,200);assert.equal(rpcCalls.at(-1).args.p_actor,String(user.tg_id));assert.equal(rpcCalls.at(-1).args.p_action,'option.save');
+ assert.equal((await call('backend.option.save',{...variant,approval:'approved'})).status,400);
+ assert.equal((await call('backend.option.save',{...variant,total_cost:1})).status,400);
+ assert.equal((await call('backend.offer.create',{request_id:requestId,option_ids:[requestId,requestId]})).status,400);
+ assert.equal((await call('backend.option.review',{request_id:requestId,id:requestId,decision:'approved'})).status,400);
+ assert.equal((await call('backend.asset.save',{name:'invalid.svg',content_type:'image/svg+xml',data_url:'data:image/svg+xml;base64,PHN2Zz4='})).status,400);
  console.log('PASS desktop auth: hashed one-time codes, single use, session validation, logout, disabled users, role checks, verified actor and CRM input validation');
 })().catch(e=>{console.error(e.stack);process.exitCode=1});
