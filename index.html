@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="var(--background)">
 <title>Подбор</title>
-<meta name="podbor-version" content="2026-11-17-backend-v1">
+<meta name="podbor-version" content="2026-11-17-reliability-v2">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script defer src="assets/pdf-lib.min.js"></script>
 <script defer src="assets/fontkit.umd.min.js"></script>
@@ -234,6 +234,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{
 .hint{font-size:12px;color:var(--muted-foreground);line-height:1.45;padding:0 4px}
 .uava{width:40px;height:40px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;background:var(--accent);color:var(--accent-foreground)}
 .li.off .ct,.li.off .uava{opacity:.45}
+
+/* Рабочие списки без декоративных карточек и смешения с учебными данными. */
+.work-switch{display:flex;border-bottom:1px solid var(--border);margin-bottom:12px;gap:16px}.work-switch button{border:0;border-bottom:2px solid transparent;background:none;padding:12px 0;color:var(--muted-foreground);font-size:14px}.work-switch button.on{border-color:var(--primary);color:var(--foreground);font-weight:600}
+.card{border-radius:12px}.group{border-radius:10px}.pill{border-radius:6px}.btn{border-radius:8px}.li{padding-top:16px;padding-bottom:16px}.tabs{border-top:1px solid var(--border-soft)}
+.tabs{justify-content:space-around;gap:4px;background:var(--card);padding:8px 8px calc(8px + env(safe-area-inset-bottom))}.tab{width:auto;flex:1;min-height:48px;gap:5px}.tab span{position:static;width:auto;height:auto;clip:auto;overflow:visible;font-size:11px;line-height:1.2}.tab.on{color:var(--primary)}.inp{border-radius:8px}.chip{border-radius:4px}
 </style>
 </head>
 <body>
@@ -318,7 +323,7 @@ var REQS = [
   { key: 'palisade', title: 'Hyundai Palisade', sub: 'с 2021, до 70 тыс. км', mgr: 'Артём Л.', when: '12 окт', search: ['обзвон', 'info'] },
   { key: 'gle', title: 'Mercedes GLE', sub: 'с 2020 по 2021, до 50 тыс. км', mgr: 'Олег С.', when: '9 окт', search: ['закрыт', 'muted'] }
 ];
-var CST = { search: ['Ищем тачку', 'info'], think: ['Думает', 'warn'], lost: ['Слился', 'bad'], won: ['Заказал', 'good'] };
+var CST = { search: ['Подбор', 'info'], think: ['Предложение', 'warn'], lost: ['Отказ', 'bad'], won: ['Заказ', 'good'] };
 var SUPS = [
   { code: 'П-07', geo: 'Япония', cid: 'p7', order: 1 },
   { code: 'П-03', geo: 'ОАЭ', cid: 'p3', order: 2 },
@@ -373,10 +378,12 @@ var API_URL = 'https://lobzdwuqyylthmhsgucd.supabase.co/functions/v1/api';
 var API_KEY = 'sb_publishable_YH4c53SnOnZWnRXwNNnB2Q_vijUYTYi';
 function online() { return !!(API_URL && TG && TG.initData); }
 function call(action, payload) {
-  return fetch(API_URL, { method: 'POST', headers: { 'content-type': 'application/json', apikey: API_KEY, authorization: 'Bearer ' + API_KEY }, body: JSON.stringify({ initData: TG.initData, action: action, payload: payload || {} }) })
-    .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error(j.error || ('HTTP ' + r.status)); e.code = j.error || 'http'; throw e; } return j; }); });
+  var controller = new AbortController(), timer = setTimeout(function () { controller.abort(); }, 20000);
+  return fetch(API_URL, { signal: controller.signal, method: 'POST', headers: { 'content-type': 'application/json', apikey: API_KEY, authorization: 'Bearer ' + API_KEY }, body: JSON.stringify({ initData: TG.initData, action: action, payload: payload || {} }) })
+    .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error(j.error || ('HTTP ' + r.status)); e.code = j.error || 'http'; throw e; } return j; }); }).finally(function () { clearTimeout(timer); });
 }
 function errText(e) {
+  if(e.name === 'AbortError') return 'Сервер не ответил за 20 секунд. Повторите действие';
   return ({ forbidden: 'Нет прав на это', self: 'Себя нельзя выключить, понизить или удалить', exists: 'Этот ID уже есть в списке', bad_id: 'Telegram ID это число из цифр', bad_name: 'Впишите имя', desktop_db: 'Не удалось подготовить вход. Повторите позже', crm_db: 'Не удалось обратиться к CRM. Повторите позже', crm_conflict: 'Заявку уже изменили. Обновите список и повторите действие', crm_duplicate: 'У клиента уже есть активная заявка. Найдите её по телефону', crm_bad_data: 'Проверьте заполненные поля заявки', crm_not_found: 'Заявка недоступна. Обновите список', crm_reason_required: 'Укажите причину отказа', crm_comment_required: 'Для Другое нужен комментарий', workspace_too_large: 'Превышен общий объём данных. Уменьшите размер бланка', db_workspace_failed: 'Сервер не смог сохранить или прочитать данные. Повторите позже', bad_workspace: 'Не удалось проверить формат сохраняемых данных', bad_init_data: 'Telegram не подтвердил вход, откройте приложение заново' })[e.code] || 'Не получилось: ' + e.message;
 }
 function fromRow(r) {
@@ -578,13 +585,15 @@ function cellsHtml() {
   return out;
 }
 
+function visibleRequests() { return REQS.filter(function (r) { return !online() || (S.showExamples ? !r.custom : !!r.custom); }); }
+function exampleSwitch() { return online() ? '<div class="work-switch"><button data-a="examples" data-v="work" class="'+(!S.showExamples?'on':'')+'">Рабочие заявки</button><button data-a="examples" data-v="demo" class="'+(S.showExamples?'on':'')+'">Примеры</button></div>'+(S.showExamples?'<p class="cm">Учебные данные. Поиск, обзвон и ответы поставщиков здесь имитируются.</p>':'') : ''; }
 function vList() {
   var owner = S.role === 'owner';
-  var cnt = function (f) { return REQS.filter(function (r) { return f === 'all' || S.cls[r.key].status === f; }).length; };
-  var pills = [['all', 'Все'], ['search', 'Ищем'], ['think', 'Думает'], ['lost', 'Слился'], ['won', 'Заказал']].map(function (f) {
+  var cnt = function (f) { return visibleRequests().filter(function (r) { return f === 'all' || S.cls[r.key].status === f; }).length; };
+  var pills = [['all', 'Все'], ['search', 'Подбор'], ['think', 'Предложение'], ['lost', 'Отказ'], ['won', 'Заказ']].map(function (f) {
     return '<button class="pill ' + (S.listFilter === f[0] ? 'on' : '') + '" data-a="filter" data-v="' + f[0] + '">' + f[1] + ' ' + cnt(f[0]) + '</button>';
   }).join('');
-  var items = REQS.filter(function (r) { var q = S.searchQuery.toLowerCase().trim(); var c = S.cls[r.key]; return (S.listFilter === 'all' || c.status === S.listFilter) && (!q || (r.title + ' ' + c.name + ' ' + (c.phone || '')).toLowerCase().indexOf(q) >= 0); }).map(function (r) {
+  var items = visibleRequests().filter(function (r) { var q = S.searchQuery.toLowerCase().trim(); var c = S.cls[r.key]; return (S.listFilter === 'all' || c.status === S.listFilter) && (!q || (r.title + ' ' + c.name + ' ' + (c.phone || '')).toLowerCase().indexOf(q) >= 0); }).map(function (r) {
     var search = r.search;
     if (r.live) search = S.sent ? ['отправлено', 'muted'] : ['ответили ' + S.supArrived + ' из 4', 'muted'];
     var cl = S.cls[r.key];
@@ -595,16 +604,16 @@ function vList() {
       '<span class="row" style="gap:6px;padding-top:6px">' + clientStatusChip(r.key) + chip(search[0], TONE[search[1]]) + '</span></span></button>';
   }).join('');
   var pend = pendingList();
-  var banner = owner && pend.length
+  var banner = (!online() || S.showExamples) && owner && pend.length
     ? '<button class="banner" style="background:var(--warning-soft);color:var(--warning-strong);align-items:center;cursor:pointer" data-a="go" data-v="approve">' + ic('shield') +
       '<div style="flex:1"><b>Цена ждёт подтверждения</b><p>' + pend.length + ' ' + (pend.length === 1 ? 'вариант' : 'варианта') + ' по Toyota Camry</p></div>' + ic('next', 'i-s') + '</button>'
-    : S.cls.bmw.status === 'think' && !S.cls.bmw.snoozed
+    : (!online() || S.showExamples) && S.cls.bmw.status === 'think' && !S.cls.bmw.snoozed
       ? '<button class="banner" style="background:var(--warning-soft);color:var(--warning-strong);align-items:center;cursor:pointer" data-a="tab" data-v="feedback">' + ic('bell') +
         '<div style="flex:1"><b>ООО «Вектор» слился?</b><p>Думает ' + days(S.cls.bmw.days) + ' по BMW X5</p></div>' + ic('next', 'i-s') + '</button>' : '';
-  return '<div class="scroll" data-k="list">' +
+  return '<div class="scroll" data-k="list">' + exampleSwitch() +
     (online() && S.me && S.me.role !== 'supplier' ? '<div class="row sb"><span class="cm">CRM компании · ' + (S.crmTotal || 0) + ' заявок</span><button class="btn b-sm" data-a="refreshCrm">Обновить</button></div>' : '') +
     (S.searchOpen ? '<div class="field"><label for="requestSearch">Найти запрос</label><input id="requestSearch" class="inp" data-in="searchQuery" value="' + esc(S.searchQuery) + '" placeholder="Модель, клиент или телефон"></div>' : '') + banner +
-    '<div class="pills">' + pills + '</div>' + (items ? '<div class="group">' + items + '</div>' : '<div class="card" style="align-items:center;padding:24px"><span class="cm">В этом статусе запросов нет</span></div>') + (online() && ((S.crmPage || 0) + 1) * 100 < (S.crmTotal || 0) ? '<button class="btn white" data-a="moreCrm">Ещё заявки CRM</button>' : '') + '</div>';
+    '<div class="pills">' + pills + '</div>' + (items ? '<div class="group">' + items + '</div>' : '<div class="card" style="align-items:center;padding:24px"><span class="cm">Заявок не найдено</span></div>') + (online() && ((S.crmPage || 0) + 1) * 100 < (S.crmTotal || 0) ? '<button class="btn white" data-a="moreCrm">Ещё заявки CRM</button>' : '') + '</div>';
 }
 
 function requestField(id, label, key, placeholder, type) {
@@ -638,7 +647,7 @@ function vRequest() {
   var c = S.cls[r.key];
   return '<div class="scroll"><div class="card"><h2>' + esc(r.title) + '</h2><span class="cm">' + esc(c.name) + '</span>' + clientStatusChip(r.key, true) + '<dl class="kv"><dt>Телефон</dt><dd>' + esc(c.phone || 'Не указан') + '</dd><dt>Поколение</dt><dd>' + esc(r.generation || 'Уточнить') + '</dd><dt>Годы</dt><dd>' + esc(r.years || 'Уточнить') + '</dd><dt>Пробег</dt><dd>' + esc(r.mileage || 'Уточнить') + '</dd><dt>Бюджет</dt><dd>' + (r.budget ? rub(r.budget) : 'Уточнить') + '</dd><dt>Пожелания</dt><dd>' + esc(r.spec || 'Не указаны') + '</dd><dt>Ответственный</dt><dd>' + esc(r.mgr || 'Не назначен') + '</dd>' + (r.nextContactAt ? '<dt>Следующий контакт</dt><dd>' + new Date(r.nextContactAt).toLocaleString('ru-RU') + '</dd>' : '') + '</dl></div>' +
     (r.sourceText ? '<div class="card"><b>Исходное сообщение</b><p style="white-space:pre-wrap">' + esc(r.sourceText) + '</p></div>' : '') +
-    (r.crmId ? realOptionsHtml(r.crmId) : '') + '<div class="card"><b>Источники поиска</b><p class="cm">Автоматический поиск пока не подключён. Варианты можно добавить вручную в десктопной CRM.</p></div><button class="btn white" data-a="openCard">Посмотреть пример подбора Toyota Camry</button></div>';
+    (r.crmId ? realOptionsHtml(r.crmId) : '') + '<div class="card"><b>Источники поиска</b><p class="cm">Автоматический поиск пока не подключён. Варианты можно добавить вручную в десктопной CRM.</p></div></div>';
 }
 
 function anketa() {
@@ -927,17 +936,17 @@ function vStatus() {
 }
 
 function vFeedback() {
-  var keys = Object.keys(S.cls);
+  var keys = online() ? visibleRequests().map(function (r) { return r.key; }) : Object.keys(S.cls);
   var cnt = function (f) { return keys.filter(function (k) { return f === 'all' || S.cls[k].status === f; }).length; };
-  var h = '<div class="scroll"><div class="pills">' + [['all', 'Все'], ['search', 'Ищем'], ['think', 'Думает'], ['lost', 'Слился'], ['won', 'Заказал']].map(function (f) {
+  var h = '<div class="scroll">'+exampleSwitch()+'<div class="pills">' + [['all', 'Все'], ['search', 'Подбор'], ['think', 'Предложение'], ['lost', 'Отказ'], ['won', 'Заказ']].map(function (f) {
     return '<button class="pill ' + (S.clFilter === f[0] ? 'on' : '') + '" data-a="clFilter" data-v="' + f[0] + '">' + f[1] + ' ' + cnt(f[0]) + '</button>';
   }).join('') + '</div>';
-  if (S.cls.bmw.status === 'think' && !S.cls.bmw.snoozed) {
+  if ((!online() || S.showExamples) && S.cls.bmw.status === 'think' && !S.cls.bmw.snoozed) {
     h += '<div class="card" style="background:var(--warning-softer)"><div><b>ООО «Вектор» слился?</b><div class="cm">Думает ' + days(S.cls.bmw.days) + ' по BMW X5, ответа нет</div></div>' +
       '<div class="g3"><button class="btn b-sm white" data-a="bmwThink">Думает</button><button class="btn b-sm" style="background:var(--destructive-soft);color:var(--destructive)" data-a="openStatus" data-v="bmw" data-s="lost">Слился</button>' +
       '<button class="btn b-sm" style="background:var(--success-soft);color:var(--success)" data-a="openStatus" data-v="bmw" data-s="won">Заказал</button></div></div>';
   }
-  if (S.sent && S.cls.camry.status === 'think') h += '<div class="card" style="flex-direction:row;align-items:center;gap:12px"><div style="flex:1"><div class="ct">Алексей Морозов</div><div class="cm">Спросим о реакции через ' + days(S.t.client) + '</div></div>' + ic('clock', '', 'color:var(--text-3)') + '</div>';
+  if ((!online() || S.showExamples) && S.sent && S.cls.camry.status === 'think') h += '<div class="card" style="flex-direction:row;align-items:center;gap:12px"><div style="flex:1"><div class="ct">Алексей Морозов</div><div class="cm">Спросим о реакции через ' + days(S.t.client) + '</div></div>' + ic('clock', '', 'color:var(--text-3)') + '</div>';
   h += '<div class="group">' + keys.filter(function (k) { return S.clFilter === 'all' || S.cls[k].status === S.clFilter; }).map(function (k) {
     var cl = S.cls[k];
     return '<button class="li" data-a="openStatus" data-v="' + k + '"><span class="cand-b"><span class="row sb"><span class="ct">' + esc(cl.name) + '</span>' + clientStatusChip(k) + '</span>' +
@@ -954,9 +963,9 @@ function vCabinets() {
     ['supplier', 'Поставщик', 'Пример получения запроса и ответа с вариантом', 'box'],
     ['admin', 'Администратор', 'Пользователи и управление доступами', 'key']
   ];
-  return '<div class="scroll"><button class="btn b-pri" data-a="go" data-v="desktopLogin">CRM и админка на компьютере</button><div class="card"><b>Рабочие кабинеты</b><p class="cm">Просмотр интерфейсов на демонстрационных данных. Ваша учётная запись сохраняет права администратора.</p></div>' + options.map(function (r) {
+  return '<div class="scroll"><button class="btn b-pri" data-a="go" data-v="desktopLogin">CRM и админка на компьютере</button><div class="card"><b>Рабочие кабинеты</b><p class="cm">Откройте рабочие заявки или управление доступом. Учебные примеры вынесены в отдельный режим внутри списка.</p></div>' + options.map(function (r) {
     return '<button class="card" style="border:0;text-align:left;font:inherit;cursor:pointer" data-a="viewCabinet" data-v="' + r[0] + '"><span class="row sb"><span class="row">' + ic(r[3]) + '<b>' + r[1] + '</b></span>' + ic('next') + '</span><span class="cm">' + r[2] + '</span></button>';
-  }).join('') + '<div class="card"><b>Сценарий по брифу v3</b><p class="cm">Лид → запрос → склад, поставщики и рынок → сравнение → цена и подтверждение → текст или КП → обратная связь.</p><span class="cm">Внешний поиск, ИИ, CRM и рассылка поставщикам пока не подключены.</span></div></div>';
+  }).join('') + '<div class="card"><b>Сценарий по брифу v3</b><p class="cm">Лид → запрос → склад, поставщики и рынок → сравнение → цена и подтверждение → текст или КП → обратная связь.</p><span class="cm">CRM сохраняет заявки и варианты на сервере. Автоматический поиск, ИИ и рассылка поставщикам пока не подключены.</span></div></div>';
 }
 function vMore() {
   var owner = S.role === 'owner';
@@ -967,13 +976,24 @@ function vMore() {
     '<button class="btn white" data-a="go" data-v="desktopLogin">Вход на компьютере · CRM</button>' +
     '<button class="btn white" data-a="offerArchive">Сохранённые КП</button>' +
     (isAdmin() ? '<button class="btn white sb" data-a="cabinets">Выбрать кабинет' + ic('car') + '</button>' : '') +
-    '<div class="card" style="gap:12px"><span class="lbl">Устройства</span>' +
-    '<div class="row sb"><span style="font-size:14px">Telegram на iPhone</span>' + chip('это устройство', TONE.good) + '</div>' +
-    '<div class="row sb"><span style="font-size:14px">Chrome на MacBook</span><span class="cm">вчера</span></div></div>' +
     (owner || S.role === 'admin' ? '<button class="btn white sb" data-a="go" data-v="access">Доступы<span class="row cm" style="gap:4px">' + S.users.length + ic('next', 'i-s') + '</span></button>' : '') + '<button class="btn white" style="color:var(--destructive)" data-a="logoutAll">' + (online() ? 'Закрыть приложение' : 'Вернуться к демовходу') + '</button>' + (online() ? '' : '<button class="btn white" data-a="toLogin">Сменить роль</button>') + '</div>';
 }
 
+function vCompanySettings() {
+  var c = S.companySettings;
+  var h = '<div class="scroll"><div class="row sb"><b>Настройки компании</b><button class="btn b-sm" data-a="companySettingsRefresh"'+(S.companySettingsBusy?' disabled':'')+'>Обновить</button></div>';
+  if(S.companySettingsError) h += '<div class="card" role="alert">'+esc(S.companySettingsError)+'</div>';
+  if(!c) return h+'<div class="card"><span class="cm">'+(S.companySettingsBusy?'Загружаем общие настройки…':'Настройки не загружены. Нажмите «Обновить».')+'</span></div></div>';
+  var pairs = [['Дилер',c.dealer.name||'Не указан'],['Телефон',c.dealer.phone||'Не указан'],['Адрес',c.dealer.address||'Не указан'],['ИНН',c.dealer.inn||'Не указан'],['Минимальная маржа',c.pricing.margin_enabled?c.pricing.margin_pct+'%':'Проверка отключена'],['Отклонение от медианы',c.pricing.median_enabled?c.pricing.median_pct+'%':'Проверка отключена'],['Правило курса',c.exchange.mode==='fixed'?'Фиксированный '+c.exchange.fixed+' ₽':c.exchange.mode==='add'?'Базовый + '+c.exchange.add+' ₽':'Базовый + '+c.exchange.percent+'%'],['Срок цены',c.valid_days+' дн.'],['Бланк КП',c.letterhead_id?'Загружен':'Чистый лист']];
+  return h+'<div class="card"><dl class="kv">'+pairs.map(function(p){return '<dt>'+esc(p[0])+'</dt><dd>'+esc(p[1])+'</dd>'}).join('')+'</dl></div><p class="cm">Эти правила применяются к реальным вариантам в CRM. Редактирование доступно владельцу и администратору в кабинете на компьютере.</p><button class="btn white" data-a="go" data-v="desktopLogin">Вход в CRM на компьютере</button></div>';
+}
+function loadCompanySettings() {
+  if(S.companySettingsBusy) return;
+  S.companySettingsBusy=true;S.companySettingsError='';render();
+  return call('backend.settings.get').then(function(j){if(!j.settings)throw new Error('Настройки не получены');S.companySettings=j.settings;}).catch(function(e){S.companySettingsError=errText(e);}).then(function(){S.companySettingsBusy=false;render();});
+}
 function vSettings() {
+  if (online() && !S.showExamples) return vCompanySettings();
   var pills = [['tol', 'Допуски'], ['price', 'Цены'], ['time', 'Тайминги'], ['rate', 'Курс'], ['reasons', 'Причины'], ['kp', 'Бланк КП'], ['team', 'Команда'], ['api', 'API'], ['log', 'Журнал']].map(function (t) {
     return '<button class="pill ' + (S.stab === t[0] ? 'on' : '') + '" data-a="stab" data-v="' + t[0] + '">' + t[1] + '</button>';
   }).join('');
@@ -1122,7 +1142,7 @@ function tabsBar() {
   var owner = S.role === 'owner';
   var tabs = S.role === 'admin' ? [['cabinets', 'Кабинеты', 'car'], ['access', 'Доступы', 'key'], ['settings', 'Настройки', 'sliders'], ['more', 'Профиль', 'user']]
     : owner ? [['list', 'Запросы', 'list'], ['feedback', 'Клиенты', 'users'], ['settings', 'Настройки', 'sliders'], ['more', 'Профиль', 'user']]
-    : [['list', 'Запросы', 'list'], ['calls', 'Обзвон', 'phone'], ['feedback', 'Клиенты', 'users'], ['more', 'Профиль', 'user']];
+    : [['list', 'Запросы', 'list']].concat(!online() || S.showExamples ? [['calls', 'Обзвон', 'phone']] : []).concat([['feedback', 'Клиенты', 'users'], ['more', 'Профиль', 'user']]);
   var cur = S.stack.length ? S.stack[0] : S.screen;
   return '<nav class="tabs" aria-label="Разделы">' + tabs.map(function (t) {
     return '<button class="tab ' + (cur === t[0] ? 'on' : '') + '" data-a="tab" data-v="' + t[0] + '" aria-label="' + t[1] + '"' + (cur === t[0] ? ' aria-current="page"' : '') + '>' + ic(t[2]) + '<span>' + t[1] + '</span></button>';
@@ -1219,13 +1239,15 @@ function setCl(key, patch) { var cls = Object.assign({}, S.cls); cls[key] = Obje
 /* ---------- действия ---------- */
 var A = {
   back: back,
-  tab: function (v) { tab(v); },
+  tab: function (v) { tab(v); if(v==='settings'&&online()&&!S.showExamples)return loadCompanySettings(); },
+  companySettingsRefresh: loadCompanySettings,
   go: function (v) { go(v); },
   cabinets: function () { if (isAdmin()) tab('cabinets'); },
+  examples: function (v) { S.showExamples = v === 'demo'; S.listFilter = 'all'; S.clFilter = 'all'; S.searchQuery = ''; render(); },
   viewCabinet: function (v) {
     if (!isAdmin() || !ROLES[v]) return;
     if (!online()) S.demoAdmin = true;
-    S.role = v; S.stack = []; S.screen = homeOf(v); render();
+    S.role = v; S.showExamples = false; S.stack = []; S.screen = homeOf(v); render();
   },
   role: function (v) { set({ role: v, loginStep: 0 }); },
   forgot: function () { say('Ссылка для восстановления отправлена'); },
@@ -1524,14 +1546,16 @@ function uploadLetterhead(file) {
 }
 
 function realOptionsHtml(requestId) {
-  var options = S.realRequestId === requestId ? S.realOptions || [] : [];
-  return '<div class="card"><div class="row sb"><b>Варианты из CRM</b><button class="btn b-sm" data-a="loadRealOptions" data-v="' + esc(requestId) + '">Обновить</button></div>' + (options.length ? options.filter(function (o) { return !o.archived; }).map(function (o) {
+  var current = S.realRequestId === requestId; var options = current ? (S.realOptions || []).filter(function (o) { return !o.archived; }) : [];
+  return '<div class="card"><div class="row sb"><b>Варианты из CRM</b><button class="btn b-sm" data-a="loadRealOptions" data-v="' + esc(requestId) + '">Обновить</button></div>' + (options.length ? options.map(function (o) {
     return '<div style="padding:12px 0;border-top:1px solid var(--border)"><b>' + esc(o.title) + '</b><div class="cm">Себестоимость ' + rub(o.total_cost) + '</div><div>Клиенту ' + rub(o.client_price) + '</div><span class="cm">' + (o.evaluation && o.evaluation.can_send ? 'Можно включать в КП' : 'Требуется согласование') + '</span></div>';
-  }).join('') : '<span class="cm">Обновите список. Создание вариантов и согласование доступны в CRM на компьютере.</span>') + '<button class="btn white" data-a="go" data-v="desktopLogin">Открыть CRM на компьютере</button></div>';
+  }).join('') : '<span class="cm">'+(S.realOptionsLoading?'Загружаем варианты…':current&&S.realOptionsError?'Не удалось загрузить варианты. Нажмите «Обновить».':current?'Вариантов пока нет. Добавьте их в CRM на компьютере.':'Обновите список вариантов.')+'</span>') + '<button class="btn white" data-a="go" data-v="desktopLogin">Открыть CRM на компьютере</button></div>';
 }
 A.loadRealOptions = function (requestId) {
   if (!online()) return;
-  return call('backend.request.get', { request_id: requestId }).then(function (j) { if (S.screen !== 'request') return; var r = REQS.filter(function (r) { return r.key === S.requestKey; })[0]; if (!r || r.crmId !== requestId) return; S.realRequestId = requestId; S.realOptions = j.options || []; render(); }).catch(function (e) { say(errText(e)); });
+  var ticket = S.realOptionsTicket = (S.realOptionsTicket || 0) + 1; if(S.realRequestId !== requestId) S.realOptions = [];
+  S.realRequestId = requestId; S.realOptionsLoading = true; S.realOptionsError = false; render();
+  return call('backend.request.get', { request_id: requestId }).then(function (j) { if (S.screen !== 'request' || ticket !== S.realOptionsTicket) return; var r = REQS.filter(function (r) { return r.key === S.requestKey; })[0]; if (!r || r.crmId !== requestId) return; S.realRequestId = requestId; S.realOptions = j.options || []; }).catch(function (e) { if(S.realRequestId === requestId && ticket === S.realOptionsTicket){S.realOptionsError = true; say(errText(e));} }).then(function () { if(S.realRequestId === requestId && ticket === S.realOptionsTicket){S.realOptionsLoading = false; render();} });
 };
 var openCrmRequest = A.openRequest;
 A.openRequest = function (key) { openCrmRequest(key); var r = REQS.filter(function (r) { return r.key === key; })[0]; if (r && r.crmId && online()) return A.loadRealOptions(r.crmId); };
@@ -1699,8 +1723,8 @@ function flushWorkspace() {
 }
 function syncIndicator() {
   if (!online() || !workspaceReady) return '';
-  var text = workspaceStatus === 'error' ? workspaceLastError : (workspaceStatus === 'saving' || workspaceStatus === 'pending') ? 'Сохраняем…' : 'Сохранено в Supabase · только ваша учётная запись';
-  return '<div id="syncState" style="padding:7px 16px;font-size:12px;background:var(--accent-soft);color:var(--text-2);flex:none">' + esc(text) +
+  var text = workspaceStatus === 'error' ? workspaceLastError : (workspaceStatus === 'saving' || workspaceStatus === 'pending') ? 'Сохраняем…' : 'Сохранено в Supabase · настройки примеров';
+  return '<div id="syncState"'+(!S.showExamples && workspaceStatus !== 'error'?' hidden':'')+' style="padding:7px 16px;font-size:12px;background:var(--accent-soft);color:var(--text-2);flex:none">' + esc(text) +
     (workspaceStatus === 'error' ? '<button class="btn b-sm" style="margin-top:6px" data-a="' + (workspaceConflict ? 'loadServerState' : 'retryWorkspace') + '">' + (workspaceConflict ? 'Загрузить серверную версию' : 'Повторить сохранение') + '</button>' : '') + '</div>';
 }
 function updateSyncIndicator() {
