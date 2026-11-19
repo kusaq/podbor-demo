@@ -31,5 +31,9 @@ async function signature(){const p=new URLSearchParams({auth_date:String(Math.fl
  assert.equal((await call('backend.offer.create',{request_id:requestId,option_ids:[requestId,requestId]})).status,400);
  assert.equal((await call('backend.option.review',{request_id:requestId,id:requestId,decision:'approved'})).status,400);
  assert.equal((await call('backend.asset.save',{name:'invalid.svg',content_type:'image/svg+xml',data_url:'data:image/svg+xml;base64,PHN2Zz4='})).status,400);
+ const contact={id:requestId,version:1,token:'33333333-3333-4333-8333-333333333333',result:'connected',note:'Call result',data:{status:'think'}};
+ assert.equal((await call('crm.client',{id:requestId})).status,200);assert.equal(rpcCalls.at(-1).args.p_actor,String(user.tg_id));
+ assert.equal((await call('crm.contact.save',contact)).status,200);assert.equal(rpcCalls.at(-1).name,'crm_log_contact');
+ for(const invalid of [{...contact,result:'dialed'},{...contact,actor:123},{...contact,version:0},{...contact,data:{assigned_to:123}},{...contact,token:'bad'},{...contact,note:'x'.repeat(2001)}])assert.equal((await call('crm.contact.save',invalid)).status,400);
  console.log('PASS desktop auth: hashed one-time codes, single use, session validation, logout, disabled users, role checks, verified actor and CRM input validation');
 })().catch(e=>{console.error(e.stack);process.exitCode=1});

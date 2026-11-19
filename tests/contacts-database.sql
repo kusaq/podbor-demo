@@ -1,0 +1,31 @@
+begin;
+do $$
+declare company uuid; other uuid; rid uuid; data jsonb; token uuid:=gen_random_uuid(); n integer;
+begin
+ select id into company from app_companies where slug='podbor-demo';
+ insert into app_companies(slug,name) values('contact-test-other','Other') returning id into other;
+ insert into app_users(tg_id,name,role,company_id) values(910000001,'Owner','owner',company),(910000002,'Manager','manager',company),(910000003,'Other','owner',other),(910000004,'Unassigned','manager',company);
+ perform set_config('role','service_role',true);
+ data:=crm_save_request(910000001,null,0,jsonb_build_object('client_name','Test','phone','79991234567','model','Test car','budget',3000000,'assigned_to',910000002,'consent_at',now()));rid:=(data->>'id')::uuid;
+ data:=crm_log_contact(910000002,rid,1,token,'no_answer','Перезвонить','{"status":"search"}');
+ if (crm_client_detail(910000001,rid))->'last_contact'<>'null'::jsonb then raise exception 'No answer counted as contact'; end if;
+ perform crm_log_contact(910000002,rid,1,token,'no_answer','Перезвонить','{"status":"search"}');
+ if (select count(*) from crm_activity where request_id=rid and kind='contact')<>1 then raise exception 'Duplicate contact'; end if;
+ begin perform crm_log_contact(910000002,rid,1,token,'connected','Перезвонить','{"status":"search"}');raise exception 'Changed retry accepted'; exception when raise_exception then if sqlerrm<>'crm_conflict' then raise; end if; end;
+ begin perform crm_log_contact(910000002,rid,1,gen_random_uuid(),'connected','','{"status":"think"}');raise exception 'Stale write'; exception when raise_exception then if sqlerrm<>'crm_conflict' then raise; end if; end;
+ perform crm_log_contact(910000002,rid,2,gen_random_uuid(),'connected','Обсудили бюджет','{"status":"think","next_contact_at":"2027-01-01T10:00:00Z"}');
+ if (crm_client_detail(910000001,rid))->'last_contact'->>'note'<>'Обсудили бюджет' then raise exception 'Contact absent'; end if;
+ if (select next_contact_at from crm_requests where id=rid) is distinct from '2027-01-01T10:00:00Z'::timestamptz then raise exception 'Next contact missing';end if;
+ if (select status from crm_requests where id=rid)<>'think' then raise exception 'Status missing'; end if;
+ begin perform crm_log_contact(910000002,rid,3,gen_random_uuid(),'connected','','{"status":"lost","reasons":[]}');raise exception 'Refusal accepted'; exception when raise_exception then if sqlerrm<>'crm_reason_required' then raise; end if; end;
+ if (select count(*) from crm_activity where request_id=rid and kind='contact')<>2 then raise exception 'Partial transaction'; end if;
+ insert into crm_activity(company_id,request_id,actor_id,kind,data) select company,rid,910000001,'comment','{"text":"Later note"}'::jsonb from generate_series(1,105);
+ if jsonb_array_length(crm_client_detail(910000001,rid)->'activity')<>100 or (crm_client_detail(910000001,rid))->'last_contact'->>'note'<>'Обсудили бюджет' then raise exception 'Old contact summary lost';end if;
+ begin perform crm_client_detail(910000003,rid);raise exception 'Other company read';exception when raise_exception then if sqlerrm<>'crm_not_found' then raise;end if;end;
+ begin perform crm_log_contact(910000004,rid,3,gen_random_uuid(),'connected','','{}');raise exception 'Unassigned write';exception when raise_exception then if sqlerrm<>'crm_not_found' then raise;end if;end;
+ update app_users set active=false where tg_id=910000002;
+ begin perform crm_client_detail(910000002,rid);raise exception 'Disabled read';exception when raise_exception then if sqlerrm<>'crm_forbidden' then raise;end if;end;
+ if has_function_privilege('anon','crm_client_detail(bigint,uuid)','execute') or has_function_privilege('authenticated','crm_log_contact(bigint,uuid,integer,uuid,text,text,jsonb)','execute') then raise exception 'Public execute';end if;
+end $$;
+select 'PASS contact idempotency, last successful conversation, transaction, roles and privacy' verification;
+rollback;

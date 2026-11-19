@@ -242,6 +242,19 @@ Deno.serve(async (req) => {
 
   if (action?.startsWith('crm.')) {
     if (!['admin','owner','manager'].includes(me.role)) return json({ error: 'crm_forbidden' }, 403);
+    if (action === 'crm.client' || action === 'crm.contact.save') {
+      const uuid = (v: unknown) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+      const allowed = action === 'crm.client' ? ['id'] : ['id','version','token','result','note','data'];
+      if (!uuid(p.id) || Object.keys(p).some(k=>!allowed.includes(k))) return json({error:'crm_bad_data'},400);
+      if (action === 'crm.client') {
+        const result = await db.rpc('crm_client_detail',{p_actor:myId,p_id:p.id});
+        return result.error ? crmError(result.error) : json(result.data);
+      }
+      const data = crmData(p.data,false);
+      if (!Number.isSafeInteger(p.version) || Number(p.version)<1 || !uuid(p.token) || !['connected','no_answer','busy','wrong_number'].includes(String(p.result)) || typeof p.note!=='string' || p.note.length>2000 || !data || Object.keys(data).some(k=>!['status','reasons','main_reason','note','next_contact_at'].includes(k))) return json({error:'crm_bad_data'},400);
+      const result = await db.rpc('crm_log_contact',{p_actor:myId,p_id:p.id,p_version:p.version,p_token:p.token,p_result:p.result,p_note:p.note,p_data:data});
+      return result.error ? crmError(result.error) : json(result.data);
+    }
     if (action === 'crm.import') {
       const result = await db.rpc('crm_import_company', { p_actor: myId });
       return result.error ? crmError(result.error) : json({ imported: result.data });

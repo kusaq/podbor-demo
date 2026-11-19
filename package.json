@@ -11,7 +11,8 @@
     "test:browser": "node tests/browser.cjs",
     "test:crm": "node tests/crm-browser.cjs",
     "test:domain": "node tests/domain-browser.cjs",
-    "test:review": "node tests/review-browser.cjs"
+    "test:review": "node tests/review-browser.cjs",
+    "test:contacts": "node tests/contacts-browser.cjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"

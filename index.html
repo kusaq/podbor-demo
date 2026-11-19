@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="var(--background)">
 <title>Подбор</title>
-<meta name="podbor-version" content="2026-11-17-review-v3">
+<meta name="podbor-version" content="2026-11-19-client-contacts-v1">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script defer src="assets/pdf-lib.min.js"></script>
 <script defer src="assets/fontkit.umd.min.js"></script>
@@ -240,6 +240,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{
 .card{border-radius:12px}.group{border-radius:10px}.pill{border-radius:6px}.btn{border-radius:8px}.li{padding-top:16px;padding-bottom:16px}.tabs{border-top:1px solid var(--border-soft)}
 .tabs{justify-content:space-around;gap:4px;background:var(--card);padding:8px 8px calc(8px + env(safe-area-inset-bottom))}.tab{width:auto;flex:1;min-height:48px;gap:5px}.tab span{position:static;width:auto;height:auto;clip:auto;overflow:visible;font-size:11px;line-height:1.2}.tab.on{color:var(--primary)}.inp{border-radius:8px}.chip{border-radius:4px}
 .client-row{display:flex;align-items:center;border-bottom:1px solid var(--border-soft)}.client-row:last-child{border:0}.client-row{background:var(--card)}.client-row>.li{flex:1;min-width:0;border:0;border-radius:0;background:transparent}.client-call{display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px;color:var(--primary);text-decoration:none;font-size:11px}.client-call[aria-disabled=true]{pointer-events:none;opacity:.4}.required{color:var(--destructive)}.call-result{color:var(--success);font-weight:600}
+.client-history{list-style:none;margin:0;padding:0}.client-history li{padding:14px 0;border-bottom:1px solid var(--border-soft);display:flex;flex-direction:column;gap:6px}.client-history li:last-child{border:0}.client-history p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 </style>
 </head>
 <body>
@@ -931,9 +932,18 @@ function vClient() {
   return h + '</div>';
 }
 
+
+var contactLabels={connected:'Разговор состоялся',no_answer:'Нет ответа',busy:'Занято',wrong_number:'Неверный номер'};
+function contactDate(value){return value?new Date(value).toLocaleString('ru-RU',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'Контактов пока нет'}
+function clientRequest(key){return REQS.filter(function(r){return r.key===key})[0]}
+function clientDial(key,caption){var c=S.cls[key],phone=String(c&&c.phone||'').replace(/\D/g,'');return phone?'<a class="btn white" href="tel:+'+esc(phone)+'" data-customer-call="'+esc(key)+'">'+ic('phone','i-s')+esc(caption||'Позвонить клиенту')+'</a>':'<span class="cm">Телефон не указан</span>'}
+function clientHistory(items){if(!items.length)return '<p class="cm">История пока пуста</p>';return '<ol class="client-history">'+items.map(function(a){var d=a.data||{},label=a.kind==='contact'?contactLabels[d.result]||'Контакт':a.kind==='created'?'Создана заявка':a.kind==='comment'?'Заметка':a.kind==='updated'?'Изменена заявка':a.kind==='offer.sent'?'КП отмечено отправленным':a.kind==='offer.created'?'Создано КП':a.kind==='option.saved'?'Сохранён вариант':a.kind.indexOf('price.')===0?'Решение по цене':'Изменение по заявке';return '<li><b>'+esc(label)+'</b><span class="cm">'+esc(contactDate(a.created_at))+' · '+esc(a.actor_name||'Сотрудник')+'</span>'+(a.kind==='contact'?'<p>'+esc(d.note||'Без комментария')+'</p><span class="cm">Статус '+esc(CST[d.status]?CST[d.status][0]:d.status||'')+'</span>':a.kind==='comment'?'<p>'+esc(d.text||'')+'</p>':a.kind==='updated'&&d.status!==d.from_status?'<p>'+esc(CST[d.status]?CST[d.status][0]:d.status||'')+'</p>':'')+'</li>'}).join('')+'</ol>'}
+function vClientRecord(){var key=S.clientKey,c=S.cls[key],r=clientRequest(key);if(!c)return '<div class="scroll">Клиент недоступен</div>';var detail=S.clientDetail&&S.clientDetailKey===key?S.clientDetail:null,row=detail&&detail.request;return '<div class="scroll"><div class="card"><h2>'+esc(c.name)+'</h2><span class="cm">'+esc(c.phone||'Телефон не указан')+'</span>'+'<div class="row">'+clientStatusChip(key)+'</div><span class="cm">Менеджер '+esc(r&&r.mgr||'Не назначен')+'</span>'+clientDial(key)+'<button class="btn b-sm" data-a="openStatus" data-v="'+esc(key)+'">Изменить статус</button></div>'+(S.clientBusy?'<p role="status">Загружаем историю…</p>':'')+(S.clientError?'<div class="card" role="alert">'+esc(S.clientError)+'<button class="btn" data-a="reloadClient">Повторить</button></div>':'')+'<section class="card"><b>Последний контакт</b><span>'+esc(detail&&detail.last_contact?contactDate(detail.last_contact.at):S.clientBusy?'Загружаем данные':S.clientError?'Не удалось получить данные':'Разговоров пока не зафиксировано')+'</span>'+(detail&&detail.last_contact&&detail.last_contact.note?'<p>'+esc(detail.last_contact.note)+'</p>':'')+'</section><section class="card"><b>Заявка и заказ</b><dl class="kv"><dt>Автомобиль</dt><dd>'+esc(row&&row.model||r&&r.title||c.car)+'</dd><dt>Бюджет</dt><dd>'+rub(row&&row.budget||r&&r.budget||0)+'</dd><dt>Пожелания</dt><dd>'+esc(row&&row.spec||r&&r.spec||'Не указаны')+'</dd><dt>Когда покупает</dt><dd>'+esc(row&&row.purchase_time||c.purchaseTime||'Не указано')+'</dd><dt>Следующий контакт</dt><dd>'+esc(row&&row.next_contact_at?contactDate(row.next_contact_at):'Не назначен')+'</dd><dt>Заказ</dt><dd>'+(c.status==='won'?'В заявке отмечен статус «Заказ»':'В заявке заказ не отмечен')+'</dd></dl><p class="cm">Договор, оплата и доставка пока не ведутся в приложении.</p></section><section class="card"><b>История клиента</b>'+(!r||!r.crmId?'<p class="cm">Учебная карточка. Реальная история доступна у заявок CRM.</p>':detail?clientHistory(detail.activity||[]):'')+'</section></div>'}
+async function loadClientRecord(key){var r=clientRequest(key),ticket=S.clientTicket=(S.clientTicket||0)+1;S.clientBusy=true;S.clientError='';render();try{if(!r||!r.crmId){S.clientDetail=null;S.clientDetailKey=key;return}var j=await call('crm.client',{id:r.crmId});if(ticket!==S.clientTicket||S.clientKey!==key)return;mergeCrmRequest(j.request);S.clientDetail=j;S.clientDetailKey=key;}catch(e){if(ticket===S.clientTicket)S.clientError=errText(e)}finally{if(ticket===S.clientTicket){S.clientBusy=false;render();}}}
+function contactForm(){return '<section class="card"><b>Как прошёл звонок?</b><p class="cm">Выберите фактический результат. Открытие номера не подтверждает разговор.</p><div class="wrap">'+Object.keys(contactLabels).map(function(k){return '<button class="pill '+(S.contactResult===k?'on':'')+'" data-a="contactResult" data-v="'+k+'">'+contactLabels[k]+'</button>'}).join('')+'</div><label for="contactNote">Итог и договорённости</label><textarea id="contactNote" class="inp" data-in="contactNote" maxlength="2000"'+(S.crmStatusBusy?' disabled':'')+'>'+esc(S.contactNote||'')+'</textarea><label for="contactNext">Следующий контакт</label><input id="contactNext" type="datetime-local" class="inp" data-in="contactNext"'+(S.crmStatusBusy?' disabled':'')+' value="'+esc(S.contactNext||'')+'">'+'</section>'}
 function vStatus() {
   var key = S.stKey, cl = S.cls[key], d = S.draft;
-  var h = '<div class="scroll"><div class="card" style="gap:2px"><div class="ct">' + esc(cl.name) + '</div><div class="cm">' + esc(cl.car) + '</div></div>' +
+  var h = '<div class="scroll">'+(S.contactMode?contactForm():'')+'<div class="card" style="gap:2px"><div class="ct">' + esc(cl.name) + '</div><div class="cm">' + esc(cl.car) + '</div></div>' +
     '<div class="card" style="gap:6px;padding:8px">' + ['search', 'think', 'lost', 'won'].map(function (k) {
       var on = d.status === k;
       return '<button class="cand" style="' + (on ? 'background:var(--accent-soft)' : '') + '" data-a="stPick" data-v="' + k + '"><span class="radio ' + (on ? 'on' : '') + '"></span><span class="cand-b"><span style="font-weight:600;font-size:15px">' + CST[k][0] + '</span></span>' + chip(CST[k][0], TONE[CST[k][1]]).replace(CST[k][0], '') + '</button>';
@@ -952,7 +962,7 @@ function vStatus() {
   }
   if (d.status === 'won') h += '<div class="banner" style="background:var(--success-soft);color:var(--success)">' + ic('check') + '<div><b>Клиент заказал</b><p>Договор, предоплата и логистика запланированы после MVP</p></div></div>';
   var ok = d.status !== 'lost' || d.reasons.length;
-  return h + '<button class="btn ' + (ok ? 'b-acc' : 'b-off') + '" data-a="stSave">Сохранить</button></div>';
+  return h + (S.contactMode&&S.contactError?'<div class="card" role="alert">'+esc(S.contactError)+'</div>':'')+'<button class="btn ' + (ok ? 'b-acc' : 'b-off') + '" data-a="stSave"'+(S.crmStatusBusy?' disabled':'')+'>'+(S.crmStatusBusy?'Сохраняем…':S.contactMode?'Сохранить результат звонка':'Сохранить')+'</button></div>';
 }
 
 function vFeedback() {
@@ -969,8 +979,8 @@ function vFeedback() {
   if ((!online() || S.showExamples) && S.sent && S.cls.camry.status === 'think') h += '<div class="card" style="flex-direction:row;align-items:center;gap:12px"><div style="flex:1"><div class="ct">Алексей Морозов</div><div class="cm">Спросим о реакции через ' + days(S.t.client) + '</div></div>' + ic('clock', '', 'color:var(--text-3)') + '</div>';
   h += '<div class="group">' + keys.filter(function (k) { return S.clFilter === 'all' || S.cls[k].status === S.clFilter; }).map(function (k) {
     var cl = S.cls[k], req = REQS.filter(function(r){return r.key===k})[0];
-    return '<div class="client-row"><button class="li" data-a="openStatus" data-v="' + k + '"><span class="cand-b"><span class="row sb"><span class="ct">' + esc(cl.name) + '</span>' + clientStatusChip(k) + '</span>' +
-      '<span class="cm">' + esc(cl.car) + (S.role==='owner'?' · Менеджер '+esc(req && req.mgr || 'Не назначен'):'') + (cl.status === 'lost' && cl.main ? ', ' + esc(cl.main.toLowerCase()) : '') + '</span></span></button><a class="client-call" href="tel:+'+esc(String(cl.phone||'').replace(/\D/g,''))+'" aria-label="Позвонить клиенту '+esc(cl.name)+'"'+(!cl.phone?' aria-disabled="true" tabindex="-1"':'')+'>'+ic('phone','i-s')+'<span>Позвонить</span></a></div>';
+    return '<div class="client-row"><button class="li" data-a="openClient" data-v="' + k + '"><span class="cand-b"><span class="row sb"><span class="ct">' + esc(cl.name) + '</span>' + clientStatusChip(k) + '</span>' +
+      '<span class="cm">' + esc(cl.car) + (S.role==='owner'?' · Менеджер '+esc(req && req.mgr || 'Не назначен'):'') + (cl.status === 'lost' && cl.main ? ', ' + esc(cl.main.toLowerCase()) : '') + '</span></span></button><a class="client-call" data-customer-call="'+esc(k)+'" href="tel:+'+esc(String(cl.phone||'').replace(/\D/g,''))+'" aria-label="Позвонить клиенту '+esc(cl.name)+'"'+(!cl.phone?' aria-disabled="true" tabindex="-1"':'')+'>'+ic('phone','i-s')+'<span>Позвонить</span></a></div>';
   }).join('') + '</div>';
   return h + '</div>';
 }
@@ -1133,13 +1143,14 @@ function vUser() {
 
 function vBoot() { return '<div class="auth" style="justify-content:center"><div class="wm">подбор</div><p class="auth-s">Проверяем доступ</p></div>'; }
 
-var VIEWS = {callgroup:vCallGroup,demoCalls:vDemoCalls, desktopLogin: vDesktopLogin, offerArchive: vOfferArchive, savedOffer: vSavedOffer, request: vRequest, cabinets: vCabinets, boot: vBoot, noaccess: vNoAccess, access: vAccess, user: vUser,  login: vLogin, list: vList, lead: vLead, newreq: vNew, supcheck: vSupcheck, card: vCard, offer: vOffer, approve: vApprove, calls: vCalls, reply: vReply, client: vClient, status: vStatus, feedback: vFeedback, more: vMore, settings: vSettings, supplier: vSupplier };
+var VIEWS = {clientRecord:vClientRecord,callgroup:vCallGroup,demoCalls:vDemoCalls, desktopLogin: vDesktopLogin, offerArchive: vOfferArchive, savedOffer: vSavedOffer, request: vRequest, cabinets: vCabinets, boot: vBoot, noaccess: vNoAccess, access: vAccess, user: vUser,  login: vLogin, list: vList, lead: vLead, newreq: vNew, supcheck: vSupcheck, card: vCard, offer: vOffer, approve: vApprove, calls: vCalls, reply: vReply, client: vClient, status: vStatus, feedback: vFeedback, more: vMore, settings: vSettings, supplier: vSupplier };
 
 /* ---------- рендер ---------- */
 function header(screen, hasBack) {
   var owner = S.role === 'owner';
   var m = META[screen] || ['', ''];
   if(screen==='calls')m=['Обзвон','Группы по заявкам'];if(screen==='callgroup')m=['Обзвон заявки','Проверка вариантов'];if(screen==='demoCalls')m=['Учебный обзвон','Toyota Camry'];
+  if(screen==='clientRecord')m=['Клиент','История и заявка'];
   if (screen === 'desktopLogin') m = ['Вход на компьютере', 'CRM и команда'];
   if (screen === 'offerArchive') m = ['Версии КП', 'Сохранённые предложения'];
   if (screen === 'savedOffer') m = ['Коммерческое предложение', 'Сохранённая версия'];
@@ -1194,7 +1205,7 @@ function render() {
   if (S.toast) h += '<div class="toast" role="status" aria-live="polite">' + ic('check', 'i-s') + '<span>' + esc(S.toast) + '</span></div>';
   app.innerHTML = (S.screen === 'login' || S.screen === 'noaccess' || S.screen === 'boot' ? '' : syncIndicator()) + h;
   app.querySelectorAll('.scroll').forEach(function (el) {
-    var identity=S.screen==='request'?S.requestKey:S.screen==='status'?S.stKey:S.screen==='callgroup'?S.callGroup:S.screen==='offer'?S.sel:'';
+    var identity=S.screen==='clientRecord'?S.clientKey:S.screen==='request'?S.requestKey:S.screen==='status'?S.stKey:S.screen==='callgroup'?S.callGroup:S.screen==='offer'?S.sel:'';
     var k=el.dataset.k==='list'?'list':(el.dataset.k||S.screen)+':'+(identity||'');el.dataset.scrollKey=k;
     el.scrollTop=keep[k]||0;
   });
@@ -1264,7 +1275,10 @@ var A = {
   callGroup: function(key){S.callGroup=key;S.callOptions=[];S.callResults={};S.callGroupError='';go('callgroup');return loadCallGroup();},
   reloadCallGroup: loadCallGroup,
   callOutcome: async function(id,el){if(S.callSaving)return;var r=REQS.filter(function(r){return r.key===S.callGroup})[0];if(!r||!r.crmId||!(S.callOptions||[]).some(function(o){return o.id===id}))return;S.callSaving=true;el.disabled=true;try{await call('crm.comment',{id:r.crmId,text:'Обзвон ['+id+'] '+el.dataset.result});await loadCallGroup();say('Результат проверки сохранён')}catch(e){say(errText(e))}finally{S.callSaving=false;el.disabled=false}},
-  back: back,
+  openClient: function(key){S.clientKey=key;S.clientDetail=null;S.clientDetailKey='';go('clientRecord');return loadClientRecord(key)},
+  reloadClient: function(){return loadClientRecord(S.clientKey)},
+  contactResult: function(result){S.contactResult=result;render()},
+  back: function(){if(S.crmStatusBusy)return;if(S.contactMode&&S.screen==='status'){if(!window.confirm('Закрыть без сохранения результата звонка?'))return;S.contactMode=false}back()},
   tab: function (v) { tab(v); if(v==='settings'&&online()&&!S.showExamples)return loadCompanySettings(); },
   companySettingsRefresh: loadCompanySettings,
   go: function (v) { go(v); },
@@ -1386,6 +1400,7 @@ var A = {
   confirmReply: function () { back(); say('П-07 добавлен в подбор'); },
   toast: function (v) { say(v); },
   openStatus: function (v, el) {
+    S.contactMode=false;
     var cl = S.cls[v];
     var d = { status: (el && el.dataset.s) || cl.status, reasons: cl.reasons.slice(), main: cl.main, note: cl.note };
     go('status', { stKey: v, draft: d });
@@ -1471,9 +1486,11 @@ app.addEventListener('click', function (e) {
   var el = e.target.closest('[data-a]');
   if (!el) return;
   e.preventDefault();
+  if(S.crmStatusBusy)return;
   var fn = A[el.dataset.a];
   if (fn) fn(el.dataset.v, el);
 });
+app.addEventListener('click',function(e){var link=e.target.closest('[data-customer-call]');if(!link)return;if(S.crmStatusBusy||link.getAttribute('aria-disabled')==='true'){e.preventDefault();return}var key=link.dataset.customerCall;if(!clientRequest(key)||!clientRequest(key).crmId){say('История звонков доступна в рабочих заявках CRM');return}var opening=S.screen==='clientRecord'&&S.clientKey===key?loadClientRecord(key):A.openClient(key);opening.then(function(){if(S.clientError||S.clientKey!==key||S.clientBusy||S.screen!=='clientRecord')return;scrollPositions['status:'+key]=0;A.openStatus(key);S.contactMode=true;S.contactToken=crypto.randomUUID();S.contactResult='';S.contactNote='';S.contactNext='';S.contactError='';render();});});
 app.addEventListener('change', function (e) { if (e.target.id === 'letterhead') uploadLetterhead(e.target.files && e.target.files[0]); });
 app.addEventListener('input', function (e) {
   var t = e.target, k = t.dataset.in;
@@ -1592,7 +1609,7 @@ function crmKey(id) { return 'local-crm-' + id; }
 function mergeCrmRequest(row) {
   var key = crmKey(row.id), old = REQS.filter(function (r) { return r.key === key; })[0];
   var request = { key: key, custom: true, crmId: row.id, crmVersion: row.version, title: row.model, budget: Number(row.budget), generation: row.generation, years: row.years, mileage: row.mileage == null ? '' : row.mileage, spec: row.spec, sourceText: row.source_text,
-    mgr: row.assigned_name || (String(row.assigned_to) === String(S.me && S.me.id) ? S.me.name : row.assigned_to ? 'ID ' + row.assigned_to : 'Без ответственного'), assignedTo: row.assigned_to, nextContactAt: row.next_contact_at,
+    mgr: row.assigned_name || (old && String(old.assignedTo)===String(row.assigned_to) ? old.mgr : '') || (String(row.assigned_to) === String(S.me && S.me.id) ? S.me.name : row.assigned_to ? 'ID ' + row.assigned_to : 'Без ответственного'), assignedTo: row.assigned_to, nextContactAt: row.next_contact_at,
     when: new Date(row.updated_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }), search: ['заявка CRM', 'info'] };
   S.cls[key] = { name: row.client_name, phone: row.phone, car: row.model, status: row.status, reasons: row.reasons || [], main: row.main_reason || '', note: row.note || '', city: row.city, payment: row.payment, legal: row.legal, purchaseTime: row.purchase_time, consentAt: row.consent_at };
   if (old) REQS = REQS.map(function (r) { return r.key === key ? request : r; }); else REQS.unshift(request);
@@ -1653,12 +1670,20 @@ A.leadCreate = function () {
 var originalStatusSave = A.stSave;
 A.stSave = function () {
   var request = REQS.filter(function (r) { return r.key === S.stKey; })[0];
+  if(S.contactMode && (!online() || !request || !request.crmId)){say('Результат звонка сохраняется только в реальной заявке CRM');return}
   if (!online() || !request || !request.crmId) return originalStatusSave();
   if (S.crmStatusBusy) return;
   var d = S.draft;
   if (d.status === 'lost' && (!d.reasons.length || d.reasons.indexOf('Другое') >= 0 && !d.note.trim())) { say('Выберите причину. Для Другое нужен комментарий'); return; }
+  if(S.contactMode){
+    if(!S.contactResult){S.contactError='Выберите результат звонка';render();return}
+    S.crmStatusBusy=true;S.contactError='';render();
+    var data={status:d.status,reasons:d.reasons,main_reason:d.main};if(d.status==='lost')data.note=d.note;
+    if(S.contactNext)data.next_contact_at=new Date(S.contactNext).toISOString();
+    return call('crm.contact.save',{id:request.crmId,version:request.crmVersion,token:S.contactToken,result:S.contactResult,note:S.contactNote||'',data:data}).then(function(j){mergeCrmRequest(j.request);S.contactMode=false;back();return loadClientRecord(S.clientKey)}).then(function(){say('Результат звонка сохранён')}).catch(function(e){S.contactError=errText(e)}).finally(function(){S.crmStatusBusy=false;render()});
+  }
   S.crmStatusBusy = true;
-  return call('crm.save', { id: request.crmId, version: request.crmVersion, data: { status: d.status, reasons: d.reasons, main_reason: d.main, note: d.note } }).then(function (j) { mergeCrmRequest(j.request); back(); say('Статус сохранён в CRM'); }).catch(function (e) { say(errText(e)); }).then(function () { S.crmStatusBusy = false; });
+  return call('crm.save', { id: request.crmId, version: request.crmVersion, data: { status: d.status, reasons: d.reasons, main_reason: d.main, note: d.note } }).then(function (j) { mergeCrmRequest(j.request); back(); say('Статус сохранён в CRM');if(S.screen==='clientRecord')return loadClientRecord(S.clientKey); }).catch(function (e) { say(errText(e)); }).then(function () { S.crmStatusBusy = false; });
 };
 
 /* Account-specific prototype state. Telegram identity is never persisted here. */
