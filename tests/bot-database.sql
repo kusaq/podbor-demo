@@ -1,0 +1,35 @@
+begin;
+do $$
+declare c uuid;other uuid;p uuid;proposal uuid;r jsonb;rid uuid;tid uuid;option_id uuid;job jsonb;first_job bigint;bad uuid;
+begin
+ select id into c from app_companies where slug='podbor-demo';
+ insert into app_companies(slug,name)values('bot-other','Other') returning id into other;
+ insert into app_users(tg_id,name,role,company_id) values(920000001,'Manager','manager',c),(920000002,'Supplier','supplier',other),(920000003,'Other owner','owner',other),(920000004,'New manager','manager',c),(920000005,'Owner','owner',c);
+ insert into bot_supplier_profiles(user_id,brands)values(920000002,array['toyota']);
+ perform set_config('role','service_role',true);
+ insert into bot_jobs(id,actor_id,payload)values(1001,920000001,'{}'),(1002,920000004,'{}');
+ job:=bot_claim_job();first_job:=(job->>'id')::bigint;job:=bot_claim_job();if (job->>'id')::bigint=first_job then raise exception 'Queue duplicate claim';end if;
+ insert into bot_proposals(company_id,actor_id,action,data,transcript,preview)values(c,920000001,'create_request',jsonb_build_object('fields',jsonb_build_object('client_name','Private Client','phone','79991234567','model','Toyota','budget',3500000),'brand','toyota','deliveries',jsonb_build_array(jsonb_build_object('supplier_id',920000002,'text','Запрос Toyota','code','supplier-code'))),'voice','preview')returning id into proposal;
+ begin perform bot_confirm(920000003,proposal,true);raise exception 'Foreign approval';exception when raise_exception then if sqlerrm<>'crm_not_found' then raise;end if;end;
+ begin perform bot_confirm(920000002,proposal,true);raise exception 'Supplier approval';exception when raise_exception then if sqlerrm<>'crm_forbidden' then raise;end if;end;
+ r:=bot_confirm(920000001,proposal,true);rid:=(r->>'id')::uuid;
+ perform bot_confirm(920000001,proposal,true);
+ if (select count(*) from bot_outbox where proposal_id=proposal)<>1 then raise exception 'Duplicate supplier send';end if;
+ insert into bot_jobs(id,actor_id,payload)values(1003,920000001,'{}');if bot_claim_job() is not null then raise exception 'Concurrent actor processing';end if;
+ r:=crm_backend(920000001,'option.save',jsonb_build_object('request_id',rid,'title','Camry','scenario','rf','currency','RUB','input',jsonb_build_object('purchase',1000000,'logistics',0,'commission',0),'client_price',1200000,'market_median',1200000));option_id:=(r->'option'->>'id')::uuid;
+ insert into bot_proposals(company_id,actor_id,request_id,request_version,action,data,transcript,preview)values(c,920000001,rid,1,'create_offer',jsonb_build_object('options',jsonb_build_array(jsonb_build_object('id',option_id,'version',1))),'text','preview')returning id into p;
+ perform bot_confirm(920000001,p,true);perform bot_confirm(920000001,p,true);
+ if (select count(*) from request_offers where request_id=rid)<>1 then raise exception 'Duplicate offer';end if;
+ select id into tid from bot_threads where request_id=rid;
+ if (bot_thread_access(920000002,tid))->>'model'<>'Toyota' then raise exception 'Independent supplier cannot read own thread';end if;
+ if bot_thread_access(920000002,tid)?'client_name' then raise exception 'Client leaked';end if;
+ begin perform bot_thread_access(920000003,tid);raise exception 'Cross-company read';exception when raise_exception then if sqlerrm<>'crm_not_found' then raise;end if;end;
+ insert into bot_proposals(company_id,actor_id,request_id,request_version,action,data,transcript,preview)values(c,920000001,rid,1,'add_note','{"text":"Confirmed note"}','text','preview')returning id into p;
+ perform crm_save_request(920000005,rid,1,jsonb_build_object('assigned_to',920000004));
+ begin perform bot_confirm(920000001,p,true);raise exception 'Former manager approval';exception when raise_exception then if sqlerrm<>'crm_not_found' then raise;end if;end;
+ update app_users set active=false where tg_id=920000002;
+ begin perform bot_thread_access(920000002,tid);raise exception 'Disabled supplier access';exception when raise_exception then if sqlerrm<>'crm_forbidden' then raise;end if;end;
+ if has_function_privilege('anon','bot_confirm(bigint,uuid,boolean)','execute') or has_function_privilege('authenticated','bot_claim_job()','execute') then raise exception 'Public API access';end if;
+end $$;
+select 'PASS bot queue, explicit approval, atomic request and formal send, duplicate confirmation, independent suppliers, isolation and revocation' verification;
+rollback;

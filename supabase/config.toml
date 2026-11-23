@@ -4,3 +4,7 @@ project_id = "lobzdwuqyylthmhsgucd"
 [functions.api]
 # Шлюз требует публичный ключ проекта, его шлёт фронт. Доступ проверяет функция по initData от Telegram.
 verify_jwt = true
+
+[functions.telegram-bot]
+# Telegram uses the secret webhook header; /drain uses a separate worker secret.
+verify_jwt = false

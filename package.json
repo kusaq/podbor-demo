@@ -12,7 +12,8 @@
     "test:crm": "node tests/crm-browser.cjs",
     "test:domain": "node tests/domain-browser.cjs",
     "test:review": "node tests/review-browser.cjs",
-    "test:contacts": "node tests/contacts-browser.cjs"
+    "test:contacts": "node tests/contacts-browser.cjs",
+    "test:bot": "node tests/bot-core.mjs && node tests/bot-runtime.cjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"
