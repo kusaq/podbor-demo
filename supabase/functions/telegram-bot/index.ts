@@ -141,7 +141,43 @@ async function drainSources(){
 }
 let running=false;
 async function drain(){if(running)return;running=true;try{for(let n=0;n<3;n++){const job=await rpc('bot_claim_job');if(!job)break;try{await engine.process(job);await result(db.from('bot_jobs').update({state:'done',lease_until:null}).eq('id',job.id).eq('attempts',job.attempts));}catch(e:any){await result(db.from('bot_jobs').update({state:'failed',lease_until:null,error_code:String(e.message||'failed').includes('ai_not_configured')?'ai_not_configured':'processing_failed'}).eq('id',job.id));const a=await actor(job.actor_id);if(a?.active)await notice(a,'Не удалось обработать сообщение. Заявка не менялась без подтверждения. Повторите команду или откройте CRM.');}}await deliver();}finally{running=false;}}
-async function sameSecret(given:string,wanted:string){if(wanted.length<32)return false;const bytes=new TextEncoder();const [a,b]=await Promise.all([crypto.subtle.digest('SHA-256',bytes.encode(given)),crypto.subtle.digest('SHA-256',bytes.encode(wanted))]);let diff=0;new Uint8Array(a).forEach((v,i)=>diff|=v^new Uint8Array(b)[i]);return diff===0;}
-Deno.serve(async(req)=>{if(req.method!=='POST')return new Response('',{status:405});const worker=new URL(req.url).pathname.endsWith('/drain');if(!await sameSecret(req.headers.get(worker?'x-worker-secret':'x-telegram-bot-api-secret-token')||'',env(worker?'BOT_WORKER_SECRET':'TELEGRAM_WEBHOOK_SECRET')))return new Response('',{status:403});if(worker){await rpc('workflow_queue_due');await Promise.all([drain(),drainSources()]);return Response.json({ok:true});}
+type BotKey = 'worker' | 'webhook';
+async function digestString(value:string){
+ const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));
+ return Array.from(new Uint8Array(digest),n=>n.toString(16).padStart(2,'0')).join('');
+}
+async function matchesKey(kind:BotKey,given:string){
+ if(given.length<32||given.length>256)return false;
+ const configured=env(kind==='worker'?'BOT_WORKER_SECRET':'TELEGRAM_WEBHOOK_SECRET');
+ const expected=configured?await digestString(configured):(await result(db.from('bot_key_digests').select('sha256').eq('kind',kind).maybeSingle()))?.sha256;
+ if(typeof expected!=='string'||expected.length!==64)return false;
+ const actual=await digestString(given);let diff=0;
+ for(let i=0;i<64;i++)diff|=actual.charCodeAt(i)^expected.charCodeAt(i);
+ return diff===0;
+}
+async function configureWebhook(req:Request){
+ const secret=req.headers.get('x-podbor-install-secret')||'';
+ if(!/^[A-Za-z0-9_-]{32,256}$/.test(secret)||!await matchesKey('webhook',secret))return new Response('',{status:403});
+ const url=new URL('/functions/v1/telegram-bot',env('SUPABASE_URL')).href;
+ if(new URL(url).protocol!=='https:')return new Response('',{status:400});
+ const bot=await tg('getMe',{});
+ const current=await tg('getWebhookInfo',{});
+ if(current.url&&current.url!==url)return Response.json({error:'another_webhook',bot:bot.username},{status:409});
+ await tg('setWebhook',{url,secret_token:secret,allowed_updates:['message','callback_query'],max_connections:1,drop_pending_updates:false});
+ const active=await tg('getWebhookInfo',{});
+ return Response.json({configured:active.url===url,bot:bot.username,bot_id:bot.id,pending:active.pending_update_count},{status:active.url===url?200:502});
+}
+Deno.serve(async(req)=>{
+ if(req.method!=='POST')return new Response('',{status:405});
+ const path=new URL(req.url).pathname.replace(/\/+$/,'')||'/';
+ const worker=path.endsWith('/drain'),install=path.endsWith('/configure-webhook');
+ if(!worker&&!install&&!path.endsWith('/telegram-bot')&&path!=='/')return new Response('',{status:404});
+ const key=worker||install?'worker':'webhook';
+ if(!await matchesKey(key,req.headers.get(key==='worker'?'x-worker-secret':'x-telegram-bot-api-secret-token')||''))return new Response('',{status:403});
+ if(install){
+  try{return await configureWebhook(req);}
+  catch(e){const code=e instanceof Error&&/^telegram_[0-9]{3}$/.test(e.message)?e.message:'telegram_unavailable';return Response.json({error:code},{status:502});}
+ }
+ if(worker){await rpc('workflow_queue_due');await Promise.all([drain(),drainSources()]);return Response.json({ok:true});}
  let update:any;try{const body=await boundedBytes(new Response(req.body),300000);update=JSON.parse(new TextDecoder().decode(body));}catch{return new Response('',{status:400});}if(!privateUpdate(update))return Response.json({ok:true});if(!Number.isSafeInteger(update.update_id)||update.update_id<0)return new Response('',{status:400});const actorId=update.callback_query?.from?.id||update.message?.from?.id;if(!Number.isSafeInteger(actorId)||actorId<=0)return new Response('',{status:400});
  const inserted=await db.from('bot_jobs').insert({id:update.update_id,actor_id:actorId,payload:update});if(inserted.error&&inserted.error.code!=='23505')return new Response('',{status:503});(globalThis as any).EdgeRuntime.waitUntil(drain());return Response.json({ok:true});});
