@@ -395,7 +395,7 @@ async function call(action, payload) {
 }
 function errText(e) {
   if(e.name === 'AbortError') return 'Сервер не ответил за 20 секунд. Повторите действие';
-  return ({ forbidden: 'Нет прав на это', self: 'Себя нельзя выключить, понизить или удалить', exists: 'Этот ID уже есть в списке', bad_id: 'Telegram ID это число из цифр', bad_name: 'Впишите имя', desktop_db: 'Не удалось подготовить вход. Повторите позже', crm_db: 'Не удалось обратиться к CRM. Повторите позже', crm_conflict: 'Заявку уже изменили. Обновите список и повторите действие', crm_duplicate: 'У клиента уже есть активная заявка. Найдите её по телефону', crm_bad_data: 'Проверьте заполненные поля заявки', crm_not_found: 'Заявка недоступна. Обновите список', crm_reason_required: 'Укажите причину отказа', crm_comment_required: 'Для Другое нужен комментарий', workspace_too_large: 'Превышен общий объём данных. Уменьшите размер бланка', db_workspace_failed: 'Сервер не смог сохранить или прочитать данные. Повторите позже', bad_workspace: 'Не удалось проверить формат сохраняемых данных', bad_init_data: 'Telegram не подтвердил вход, откройте приложение заново' })[e.code] || 'Не получилось: ' + e.message;
+  return ({ crm_reason_unknown:'Список причин изменился. Обновите заявки и выберите причину заново.', forbidden: 'Нет прав на это', self: 'Себя нельзя выключить, понизить или удалить', exists: 'Этот ID уже есть в списке', bad_id: 'Telegram ID это число из цифр', bad_name: 'Впишите имя', desktop_db: 'Не удалось подготовить вход. Повторите позже', crm_db: 'Не удалось обратиться к CRM. Повторите позже', crm_conflict: 'Заявку уже изменили. Обновите список и повторите действие', crm_duplicate: 'У клиента уже есть активная заявка. Найдите её по телефону', crm_bad_data: 'Проверьте заполненные поля заявки', crm_not_found: 'Заявка недоступна. Обновите список', crm_reason_required: 'Укажите причину отказа', crm_comment_required: 'Для Другое нужен комментарий', workspace_too_large: 'Превышен общий объём данных. Уменьшите размер бланка', db_workspace_failed: 'Сервер не смог сохранить или прочитать данные. Повторите позже', bad_workspace: 'Не удалось проверить формат сохраняемых данных', bad_init_data: 'Telegram не подтвердил вход, откройте приложение заново' })[e.code] || 'Не получилось: ' + e.message;
 }
 function fromRow(r) {
   return { id: String(r.tg_id), name: r.name, role: r.role, on: !!r.active, added: r.created_at ? new Date(r.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '') : '' };
@@ -965,7 +965,7 @@ function vStatus() {
       return '<button class="cand" style="' + (on ? 'background:var(--accent-soft)' : '') + '" data-a="stPick" data-v="' + k + '"><span class="radio ' + (on ? 'on' : '') + '"></span><span class="cand-b"><span style="font-weight:600;font-size:15px">' + CST[k][0] + '</span></span>' + chip(CST[k][0], TONE[CST[k][1]]).replace(CST[k][0], '') + '</button>';
     }).join('') + '</div>';
   if (d.status === 'lost') {
-    h += '<div class="card"><b>Почему слился?</b>' + S.groups.map(function (g) {
+    h += '<div class="card"><b>Причины отказа</b>' + (online()?[['',Array.from(new Set([...(S.companyReasons||['Другое']),...d.reasons]))]]:S.groups).map(function (g) {
       return '<div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">' + g[0] + '</span><div class="wrap">' + g[1].map(function (r) {
         return '<button class="pill soft ' + (d.reasons.indexOf(r) >= 0 ? 'on' : '') + '" data-a="stReason" data-v="' + esc(r) + '">' + esc(r) + '</button>';
       }).join('') + '</div></div>';
@@ -1031,7 +1031,8 @@ function vCompanySettings() {
   if(S.companySettingsError) h += '<div class="card" role="alert">'+esc(S.companySettingsError)+'</div>';
   if(!c) return h+'<div class="card"><span class="cm">'+(S.companySettingsBusy?'Загружаем общие настройки…':'Настройки не загружены. Нажмите «Обновить».')+'</span></div></div>';
   var pairs = [['Дилер',c.dealer.name||'Не указан'],['Телефон',c.dealer.phone||'Не указан'],['Адрес',c.dealer.address||'Не указан'],['ИНН',c.dealer.inn||'Не указан'],['Минимальная маржа',c.pricing.margin_enabled?c.pricing.margin_pct+'%':'Проверка отключена'],['Отклонение от медианы',c.pricing.median_enabled?c.pricing.median_pct+'%':'Проверка отключена'],['Правило курса',c.exchange.mode==='fixed'?'Фиксированный '+c.exchange.fixed+' ₽':c.exchange.mode==='add'?'Базовый + '+c.exchange.add+' ₽':'Базовый + '+c.exchange.percent+'%'],['Срок цены',c.valid_days+' дн.'],['Бланк КП',c.letterhead_id?'Загружен':'Чистый лист']];
-  return h+'<div class="card"><dl class="kv">'+pairs.map(function(p){return '<dt>'+esc(p[0])+'</dt><dd>'+esc(p[1])+'</dd>'}).join('')+'</dl></div><p class="cm">Эти правила применяются к реальным вариантам в CRM. Редактирование доступно владельцу и администратору в кабинете на компьютере.</p><button class="btn white" data-a="go" data-v="desktopLogin">Вход в CRM на компьютере</button></div>';
+  Object.entries(c.exchange.fixed_rates||{}).forEach(function(entry){pairs.push(['Курс '+entry[0],entry[1]+' ₽']);});
+  return h+'<div class="card"><dl class="kv">'+pairs.map(function(p){return '<dt>'+esc(p[0])+'</dt><dd>'+esc(p[1])+'</dd>'}).join('')+'</dl></div><p class="cm">Эти правила применяются к реальным вариантам в CRM. Редактировать их могут владелец и администратор.</p><a class="btn white" href="admin.html?mini=1&amp;tab=settings">Открыть настройки салона</a><button class="btn white" data-a="go" data-v="desktopLogin">Вход в CRM на компьютере</button></div>';
 }
 function loadCompanySettings() {
   if(S.companySettingsBusy) return;
@@ -1678,6 +1679,7 @@ function loadCrmRequests(more) {
       Object.keys(S.cls).forEach(function (k) { if (/^local-/.test(k)) delete S.cls[k]; });
     }
     (j.requests || []).forEach(mergeCrmRequest);
+    S.companyReasons=j.loss_reasons||['Другое'];
     S.crmPage = page; S.crmTotal = j.total || 0;
   });
 }

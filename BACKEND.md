@@ -7,7 +7,7 @@ Backend работает на Supabase PostgreSQL и Edge Function `api`. Таб
 | action | payload | Результат |
 |---|---|---|
 | `backend.settings.get` | `{}` | Общие настройки компании |
-| `backend.settings.save` | `revision`, `dealer`, `pricing`, `exchange`, `valid_days`, `letterhead_id` | Новая версия настроек. Только владелец или админ |
+| `backend.settings.save` | `revision`, `dealer`, `pricing`, `exchange`, `valid_days`, `letterhead_id`, необязательный `operations` | Новая версия настроек. Только владелец или админ |
 | `backend.asset.save` | `name`, `content_type`, `data_url` | ID неизменяемого бланка, только владелец или админ |
 | `backend.asset.get` | `id` | Бланк своей компании |
 | `backend.request.get` | `request_id`, необязательный `page` | Варианты, серверная оценка цены, настройки и страница истории КП |
@@ -21,6 +21,10 @@ Backend работает на Supabase PostgreSQL и Edge Function `api`. Таб
 Поля `input` содержат числовые значения `purchase`, `base_rate`, `logistics`, `duty`, `recycling`, `documents`, `commission`. Все суммы кроме `purchase` относятся к рублям. Для импорта `purchase` указывается в валюте закупки, `base_rate` в рублях за 1 единицу валюты. В сценарии `rf` закупка указывается в рублях, импортные статьи не включаются в итог. Отрицательные суммы не допускаются. Цена клиенту всегда в рублях.
 
 `pricing` содержит `median_enabled`, `median_pct`, `margin_enabled`, `margin_pct`. `exchange` содержит `mode` со значением `percent`, `add` или `fixed` и числа `percent`, `add`, `fixed`. `dealer` содержит строки `name`, `inn`, `address`, `phone`.
+
+Фиксированные курсы отдельных валют хранятся в `exchange.fixed_rates` в рублях за единицу JPY, CNY, USD или EUR. Для каждой закупки сервер берёт курс её валюты либо применяет общее правило. При процентной или рублёвой надбавке базовый курс вводит менеджер. В расчёте сохраняются действовавшие правило и курс.
+
+Поле `operations` хранит причины отказа, инструкцию поставщику, условия для PDF, выбранные источники поиска и отключённые события Telegram. Администратор и владелец редактируют их в «Настройки». Марки и тарифы каждого поставщика открываются из этого же раздела. Заявки сохраняют выбранную причину, а КП сохраняет текст условий на момент создания.
 
 ## Ограничения и права
 
@@ -36,7 +40,7 @@ Backend работает на Supabase PostgreSQL и Edge Function `api`. Таб
 
 ## Хранение
 
-`dealer_settings` содержит общую конфигурацию. `dealer_assets` хранит бланки. `request_options` содержит варианты и снимки расчётов. `price_decisions` сохраняет историю решений. `request_offers` хранит версии КП, а `dealer_events` и существующая `crm_activity` содержат аудит.
+`dealer_settings` хранит реквизиты, ценовую политику и номер версии. В том же сохранении обновляется `app_companies.operations`. Сроки и допуски хранятся в `workflow_policy` со своей версией. `dealer_assets` хранит бланки. `request_options` содержит варианты и снимки расчётов. `price_decisions` сохраняет историю решений. `request_offers` хранит версии КП, а `dealer_events` и существующая `crm_activity` содержат аудит.
 
 Схемы применяются после `schema.sql`, `workspace.sql`, `crm.sql`. Существующее персональное демохранилище сохраняется для совместимости. Секреты, настройки Supabase Auth и токен бота для этого обновления не меняются.
 

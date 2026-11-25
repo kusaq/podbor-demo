@@ -46,6 +46,22 @@ grant select,insert,update on public.request_listings to service_role;
 alter table public.workflow_policy add column if not exists year_slack integer not null default 0 check(year_slack between 0 and 10);
 alter table public.workflow_policy add column if not exists km_slack integer not null default 0 check(km_slack between 0 and 1000000);
 alter table public.workflow_policy add column if not exists budget_pct numeric not null default 0 check(budget_pct between 0 and 100);
+alter table public.workflow_policy
+ alter column revision set default 0,
+ alter column supplier_hours set default 2,
+ alter column escalation_hours set default 6,
+ alter column client_days set default 2;
+create or replace function public.workflow_init_policy() returns trigger
+language plpgsql security invoker set search_path=public,pg_temp as $$
+begin
+ insert into workflow_policy(company_id) values(new.id) on conflict do nothing;
+ return new;
+end $$;
+create or replace trigger workflow_company_policy after insert on public.app_companies
+ for each row execute function public.workflow_init_policy();
+insert into public.workflow_policy(company_id) select id from public.app_companies on conflict do nothing;
+revoke all on function public.workflow_init_policy() from public,anon,authenticated;
+grant execute on function public.workflow_init_policy() to service_role;
 alter table public.request_listings add column if not exists currency text not null default 'RUB' check(currency in ('RUB','CNY','JPY','USD','EUR'));
 alter table public.request_listings add column if not exists phone text not null default '' check(phone='' or phone ~ '^[+]?[0-9]{10,15}$');
 alter table public.request_listings add column if not exists vehicle jsonb not null default '{}';
@@ -258,7 +274,7 @@ begin
    'Комплектация: '||nullif(p_trim,''),
    'Кузов: '||(filter_data->>'body'),'Коробка: '||(filter_data->>'gearbox'),'Топливо: '||(filter_data->>'fuel'),'Привод: '||(filter_data->>'drive'),
    'Год от: '||(filter_data->>'year_from'),'Год до: '||(filter_data->>'year_to'),'Пробег от, км: '||(filter_data->>'mileage_from'),'Пробег до, км: '||(filter_data->>'mileage_to'),
-   E'\nОтветьте на это сообщение. Укажите машину, цену, валюту и срок. Уточните, входит ли доставка. Фото одной машины можно прислать альбомом.');
+   E'\n'||(select operations->>'supplier_instruction' from app_companies where id=r.company_id));
   insert into bot_messages(thread_id,actor_id,sanitized_text) values(t.id,p_actor,body) returning id into mid;
   insert into bot_outbox(chat_id,actor_id,thread_id,message_id,dedupe_key,body) values(supplier,p_actor,t.id,mid,'dispatch:'||t.id,
    jsonb_build_object('text',body,'reply_markup',jsonb_build_object('inline_keyboard',jsonb_build_array(jsonb_build_array(jsonb_build_object('text','Ответить по машине','style','primary','callback_data','thread:'||t.id))))));
@@ -334,7 +350,7 @@ begin
   insert into supplier_photos(message_id,job_id,jpeg) values(m.id,p_job,p_jpeg) on conflict(job_id) do nothing;
  end if;
  select assigned_to into manager from crm_requests where id=t.request_id;
- if manager is not null then
+ if manager is not null and not (select (operations->'muted_events') ? 'reply' from app_companies where id=t.company_id) then
   insert into bot_outbox(chat_id,actor_id,thread_id,request_id,dedupe_key,body) values(manager,p_actor,t.id,t.request_id,'received:'||m.id,
    jsonb_build_object('text','Ответ поставщика по запросу '||t.code||E'\n'||coalesce(nullif(m.sanitized_text,''),'Получены фотографии. Откройте подбор в CRM.'),
     'reply_markup',jsonb_build_object('inline_keyboard',jsonb_build_array(jsonb_build_array(jsonb_build_object('text','Открыть диалог','callback_data','thread:'||t.id)))))) on conflict(dedupe_key) do nothing;
@@ -357,7 +373,7 @@ revoke all on public.option_uploads,public.option_photo_writes from public,anon,
 grant select,insert on public.option_uploads,public.option_photo_writes to service_role;
 create or replace function public.crm_workflow(p_actor bigint,p_action text,p jsonb)
 returns jsonb language plpgsql security invoker set search_path=public,pg_temp as $$
-declare a app_users; r crm_requests; t bot_threads; m bot_messages; u app_users; terms supplier_terms; pol workflow_policy;
+declare a app_users; r crm_requests; t bot_threads; m bot_messages; u app_users; terms supplier_terms;
  photos uuid[]; photo uuid; result jsonb; k text; fees jsonb; brands text[]; body text; dest bigint; rev int; oldrev int; previous_choice jsonb;
 begin
  select * into a from app_users where tg_id=p_actor and active and role in ('manager','owner','admin');
@@ -378,16 +394,16 @@ begin
     from app_users u1 left join bot_supplier_profiles p1 on p1.user_id=u1.tg_id
     left join supplier_terms s on s.company_id=a.company_id and s.supplier_id=u1.tg_id
     where u1.role='supplier' and (u1.company_id=a.company_id or u1.active and p1.active)) x),'[]'),
-    'policy',coalesce((select to_jsonb(w) from workflow_policy w where company_id=a.company_id),
-     '{"revision":0,"supplier_hours":2,"escalation_hours":6,"client_days":2}'::jsonb));
+    'policy',(select to_jsonb(w) from workflow_policy w where company_id=a.company_id));
   end if;
   perform pg_advisory_xact_lock(hashtextextended(a.company_id::text||p_action||coalesce(p->>'id',''),0));
   if p_action='policy.save' then
-   select * into pol from workflow_policy where company_id=a.company_id;
-   if coalesce(pol.revision,0) is distinct from (p->>'revision')::int then raise exception 'crm_conflict'; end if;
-   insert into workflow_policy values(a.company_id,coalesce(pol.revision,0)+1,(p->>'supplier_hours')::int,(p->>'escalation_hours')::int,(p->>'client_days')::int,
-    coalesce((p->>'year_slack')::integer,pol.year_slack,0),coalesce((p->>'km_slack')::integer,pol.km_slack,0),coalesce((p->>'budget_pct')::numeric,pol.budget_pct,0))
-    on conflict(company_id) do update set revision=excluded.revision,supplier_hours=excluded.supplier_hours,escalation_hours=excluded.escalation_hours,client_days=excluded.client_days,year_slack=excluded.year_slack,km_slack=excluded.km_slack,budget_pct=excluded.budget_pct;
+   update workflow_policy set revision=revision+1, supplier_hours=(p->>'supplier_hours')::int,
+    escalation_hours=(p->>'escalation_hours')::int, client_days=(p->>'client_days')::int,
+    year_slack=coalesce((p->>'year_slack')::integer,year_slack), km_slack=coalesce((p->>'km_slack')::integer,km_slack),
+    budget_pct=coalesce((p->>'budget_pct')::numeric,budget_pct)
+   where company_id=a.company_id and revision=(p->>'revision')::int;
+   if not found then raise exception 'crm_conflict'; end if;
    return '{"ok":true}';
   end if;
   select * into u from app_users where (case when company_id=a.company_id then tg_id::text else md5(a.company_id::text||':'||tg_id) end)=p->>'id' and role='supplier' and
@@ -415,7 +431,8 @@ begin
  select * into strict r from crm_requests where id=(p->>'request_id')::uuid for update;
  if p_action='inbox' then
   return jsonb_build_object(
-   'lot_media',true,'tolerances',(select jsonb_build_object('years',year_slack,'km',km_slack,'pct',budget_pct) from workflow_policy where company_id=r.company_id),
+   'lot_media',true,'loss_reasons',(select operations->'loss_reasons' from app_companies where id=r.company_id),
+   'tolerances',(select jsonb_build_object('years',year_slack,'km',km_slack,'pct',budget_pct) from workflow_policy where company_id=r.company_id),
    'sent_cars',coalesce((select jsonb_agg(jsonb_build_object('offer',f.id,'number',f.number,'option',f.option_ids[n],'title',f.model->'cars'->(n-1)->>'title','price',f.model->'cars'->(n-1)->'price') order by f.number desc,n)
      from request_offers f cross join lateral generate_subscripts(f.option_ids,1) n where f.request_id=r.id and f.sent_at is not null),'[]'),
    'choice',(select data->'choice' from crm_activity where request_id=r.id and kind='car.chosen' order by created_at desc,id desc limit 1),
@@ -425,7 +442,7 @@ begin
     coalesce((select jsonb_agg((to_jsonb(c)-'request_id'-'url'-'actor_id')||jsonb_build_object('actor',au.name) order by c.created_at desc,c.id)
     from listing_calls c left join app_users au on au.tg_id=c.actor_id where c.request_id=l.request_id and c.url=l.url),'[]'::jsonb)) order by l.title,l.url)
     from request_listings l where l.request_id=r.id),'[]'),
-   'sources',coalesce((select jsonb_agg(to_jsonb(s)-'request_id') from search_sources s where s.request_id=r.id),'[]'),
+   'sources',coalesce((select jsonb_agg((to_jsonb(s)-'request_id') || case when (co.operations->'active_sources') ? s.source then '{}'::jsonb else '{"state":"disabled"}'::jsonb end) from search_sources s join app_companies co on co.id=r.company_id where s.request_id=r.id),'[]'),
    'threads',coalesce((select jsonb_agg(jsonb_build_object('id',th.id,'code',th.code,
     'name',case when su.company_id=a.company_id then su.name else 'Поставщик '||right(md5(su.tg_id::text),6) end,
     'terms',to_jsonb(tr)-'company_id'-'supplier_id',
@@ -562,8 +579,22 @@ begin
  raise exception 'backend_bad_action';
 end $$;
 
+-- Invalidate leases when a salon changes sources. Existing comparison and call records remain accessible.
+create or replace function public.workflow_refresh_sources() returns trigger
+language plpgsql security invoker set search_path=public,pg_temp as $$
+begin
+ update search_sources s set attempt=s.attempt+1, state='pending', claimed_at=null
+ from crm_requests r where r.id=s.request_id and r.company_id=new.id and r.archived_at is null and r.status in ('search','think')
+ and ((old.operations->'active_sources') ? s.source) is distinct from ((new.operations->'active_sources') ? s.source);
+ return new;
+end $$;
+create or replace trigger workflow_source_policy after update of operations on public.app_companies
+ for each row when ((old.operations->'active_sources') is distinct from (new.operations->'active_sources')) execute function public.workflow_refresh_sources();
+revoke all on function public.workflow_refresh_sources() from public,anon,authenticated;
+grant execute on function public.workflow_refresh_sources() to service_role;
 create or replace function public.workflow_claim_sources() returns setof jsonb language sql security invoker set search_path=public,pg_temp as $$
  with todo as (select s.request_id,s.source from search_sources s join crm_requests r on r.id=s.request_id
+ join app_companies co on co.id=r.company_id and (co.operations->'active_sources') ? s.source
  where r.archived_at is null and r.status in ('search','think') and (state='pending' or state='running' and claimed_at<now()-interval '3 minutes')
  order by s.claimed_at nulls first,s.request_id,s.source limit 6 for update of s skip locked),
  claimed as (update search_sources s set state='running',claimed_at=now(),attempt=attempt+1 from todo
@@ -585,7 +616,7 @@ language plpgsql security invoker set search_path=public,pg_temp as $$
 begin
  if new.sent_at is not null and old.sent_at is null then
   update crm_requests set next_contact_at=case when next_contact_at>new.sent_at then next_contact_at else
-   new.sent_at+make_interval(days=>coalesce((select client_days from workflow_policy where company_id=new.company_id),2)) end where id=new.request_id;
+   new.sent_at+make_interval(days=>(select client_days from workflow_policy where company_id=new.company_id)) end where id=new.request_id;
  end if;
  return new;
 end $$;
@@ -594,14 +625,14 @@ create or replace trigger workflow_offer_due after update of sent_at on public.r
 create or replace view public.workflow_due with (security_invoker=true) as
  with waiting as (
  select th.id thread_id,r.id request_id,r.company_id,th.supplier_id,r.assigned_to,th.code,
-  first_send.delivered_at, coalesce(pol.supplier_hours,2) supplier_hours,coalesce(pol.escalation_hours,6) escalation_hours
+  first_send.delivered_at, pol.supplier_hours,pol.escalation_hours
  from bot_threads th join crm_requests r on r.id=th.request_id join bot_supplier_profiles sp on sp.user_id=th.supplier_id and sp.active
  join app_users su on su.tg_id=th.supplier_id and su.active and su.role='supplier'
- left join workflow_policy pol on pol.company_id=r.company_id
+ join workflow_policy pol on pol.company_id=r.company_id
  cross join lateral (select min(b.delivered_at) delivered_at from bot_outbox b where b.thread_id=th.id and b.chat_id=th.supplier_id and b.reminder is null and b.state='sent') first_send
  where first_send.delivered_at is not null and r.archived_at is null and r.status in ('search','think')
  and not exists(select 1 from bot_messages m where m.thread_id=th.id and m.actor_id=th.supplier_id)
- )
+ ), due as (
  select 'supplier:'||thread_id as key,'supplier' as kind,supplier_id as recipient, supplier_id as actor,thread_id,request_id,company_id,
   'Запрос '||code||'. Есть ли подходящая машина? Ответьте на это сообщение.' as message from waiting
  where delivered_at+make_interval(hours=>supplier_hours)<=now()
@@ -627,7 +658,8 @@ create or replace view public.workflow_due with (security_invoker=true) as
  from listing_calls c join request_listings l on (l.request_id,l.url)=(c.request_id,c.url)
  join crm_requests r on r.id=c.request_id join app_users u on u.tg_id=r.assigned_to and u.active
  where r.archived_at is null and r.status in ('search','think') and c.next_call<=now() and c.result='retry'
- and c.id=(select last.id from listing_calls last where last.request_id=c.request_id and last.url=c.url order by last.created_at desc,last.id limit 1);
+ and c.id=(select last.id from listing_calls last where last.request_id=c.request_id and last.url=c.url order by last.created_at desc,last.id limit 1)
+ ) select d.* from due d join app_companies c on c.id=d.company_id where not ((c.operations->'muted_events') ? d.kind);
 revoke all on public.workflow_due from public,anon,authenticated;
 grant select on public.workflow_due to service_role;
 create or replace function public.workflow_queue_due() returns void language sql security invoker set search_path=public,pg_temp as $$

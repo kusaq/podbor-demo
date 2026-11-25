@@ -22,7 +22,7 @@ async function createOffer(model, loadPhoto) {
     y = height - 150;
   }
   await newPage();
-  async function line(text, size, gap) {
+  function wrapRows(text, size) {
     var words = clean(text).split(' '), rows = [], row = '';
     words.forEach(function (word) {
       // Break very long words so arbitrary model names cannot run outside the page.
@@ -31,7 +31,10 @@ async function createOffer(model, loadPhoto) {
       pieces.push(rest); pieces.forEach(function (piece) { var next = row ? row + ' ' + piece : piece; if (font.widthOfTextAtSize(next, size) > width - 90 && row) { rows.push(row); row = piece; } else row = next; });
     });
     if (row) rows.push(row);
-    for (var textRow of rows) { if (y < 100) await newPage(); page.drawText(textRow, { x: 45, y: y, size: size, font: font, color: lib.rgb(0.1, 0.13, 0.17) }); y -= size * 1.5; }
+    return rows;
+  }
+  async function line(text, size, gap) {
+    for (var textRow of wrapRows(text, size)) { if (y < 100) await newPage(); page.drawText(textRow, { x: 45, y: y, size: size, font: font, color: lib.rgb(0.1, 0.13, 0.17) }); y -= size * 1.5; }
     y -= gap || 0;
   }
   await line(model.dealer.name || 'Автоподбор', 14, 8);
@@ -39,7 +42,12 @@ async function createOffer(model, loadPhoto) {
   await line('Клиент · ' + model.client + ' · ' + new Date(model.createdAt).toLocaleDateString('ru-RU'), 11, 14);
   for (var i = 0; i < model.cars.length; i++) {
     var car = model.cars[i];
-    await line((i + 1) + '. ' + car.title, 15, 3);
+    const title = (i + 1) + '. ' + car.title;
+    const price = car.price.toLocaleString('ru-RU') + ' ₽' + (car.term ? ' · ' + car.term : '');
+    const headingHeight = wrapRows(title, 15).length * 22.5 + 3 + (wrapRows(price, 13).length - 1) * 19.5;
+    if (y - headingHeight < 100) await newPage();
+    await line(title, 15, 3);
+    await line(price, 13, 6);
     await line(car.description, 11, 2);
     for (const id of car.photo_ids || []) {
       const photo = await doc.embedJpg(dataBytes(await loadPhoto(id)));
@@ -49,8 +57,9 @@ async function createOffer(model, loadPhoto) {
       page.drawImage(photo, {x:45,y,width:size.width,height:size.height});
       y -= 14;
     }
-    await line(car.price.toLocaleString('ru-RU') + ' ₽' + (car.term ? ' · ' + car.term : ''), 13, 14);
+    y -= 10;
   }
+  if (model.offerNote) for (const paragraph of model.offerNote.split(/\r?\n/)) await line(paragraph, 11, 4);
   await line('Цена действует до ' + new Date(model.validUntil).toLocaleDateString('ru-RU'), 11, 8);
   if (model.dealer.inn) await line('ИНН ' + model.dealer.inn, 10, 0);
   if (model.dealer.address) await line(model.dealer.address, 10, 0);

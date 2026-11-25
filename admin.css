@@ -35,3 +35,23 @@ fieldset{border:0;margin:0;padding:0;min-width:0}fieldset:disabled{opacity:.8}
 .lot-compare dl,.order-card dl{margin:0}.lot-compare dl>div,.order-card dl>div{border-top:1px solid var(--line,#d4d8de);padding:6px 0}
 .lot-compare dt,.order-card dt{font-size:.82rem;color:var(--muted,#526071)}.lot-compare dd,.order-card dd{margin:3px 0 0}
 .lot-calls summary,.domain-box summary{cursor:pointer;padding:7px 0}.order-card dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:6px 16px}
+
+.config-layout{display:grid;grid-template-columns:220px minmax(0,820px);gap:24px;align-items:start}
+.config-index{position:sticky;top:82px;display:grid;gap:4px;padding-block:4px}
+.config-index a{color:var(--ink);padding:8px 10px;text-decoration:none;border-radius:4px}
+.config-index a:hover,.config-index a:focus-visible{background:var(--surface,#fff);text-decoration:underline}
+.config-index button{margin-top:8px}
+.config-layout .domain-settings{overflow:visible}
+.config-section,#cfg-workflow{scroll-margin-top:82px}
+.config-section{border-bottom:1px solid var(--line);margin-bottom:20px}
+.config-section h2{font-size:19px;margin:0 0 12px}
+.config-section .footnote{margin:0 0 14px}
+.config-section textarea{width:100%;resize:vertical;font:inherit;line-height:1.45}
+.config-section .check.field{display:flex;flex-direction:row;align-items:center;gap:9px}
+#cfg-workflow{margin-top:18px}
+@media(max-width:850px){.config-layout{grid-template-columns:minmax(0,1fr);gap:12px}.config-index{position:static;display:flex;flex-wrap:wrap;gap:4px}.config-index a{font-size:13px;padding:5px}.config-index button{margin-top:0}.config-section,#cfg-workflow{scroll-margin-top:140px}}
+
+.config-save{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;background:white;position:sticky;bottom:0;border-top:1px solid var(--line);z-index:1}
+.config-save [role=status]{font-size:13px;color:var(--muted)}
+.config-mobile-index{display:none}
+@media(max-width:850px){.config-index a{display:none}.config-mobile-index{display:grid;gap:4px;font-size:13px;color:var(--muted)}.config-mobile-index select{font:inherit;font-size:16px;padding:8px;border:1px solid var(--line);border-radius:6px;background:white;color:var(--ink)}.config-index:empty{display:none}.config-save{padding:10px 0}.config-save button{flex-shrink:0}}

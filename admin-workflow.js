@@ -4,7 +4,7 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
   const op=(name,data={})=>api('workflow.'+name,data);
   const fees={logistics:'Доставка до клиента',commission:'Комиссия',duty:'Пошлина',recycling:'Утильсбор',documents:'Оформление'};
   const currencies=['RUB','CNY','JPY','USD','EUR'];
-  const states={pending:'В очереди',running:'Идёт поиск',ready:'Поиск завершён',unconfigured:'Источник не подключён',failed:'Ошибка',sent:'Доставлен',sending:'Отправляется',uncertain:'Проверить доставку'};
+  const states={disabled:'Автопоиск выключен салоном',pending:'В очереди',running:'Идёт поиск',ready:'Поиск завершён',unconfigured:'Источник не подключён',failed:'Ошибка',sent:'Доставлен',sending:'Отправляется',uncertain:'Проверить доставку'};
   let id='',inbox=null,network=null,networkDraft=null,policyDraft=null,selected='',thread='',revision=0,busy=false,error='',tokens={},formValues={},edited=false;
   const images=new Map();
   function reset(){
@@ -31,7 +31,7 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     return '<label class="field">'+esc(label)+'<input data-wf="'+key+'" type="'+type+'" value="'+esc(value??'')+'" '+extra+'></label>';
   }
   function networkHtml(){
-    const d=networkDraft,p=policyDraft;
+    const d=networkDraft;
     const alert=error?'<p role="alert" class="error">'+esc(error)+'</p>':'';
     const title='<div class="heading"><h1 class="page-title">Поставщики</h1>'+action('network','Обновить')+'</div>';
     if(!network)return title+alert+'<p class="muted">Загрузка сети поставщиков…</p>';
@@ -42,7 +42,12 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
       '<label class="check field"><input data-wf="routing_enabled" type="checkbox" '+(d.routing_enabled!==false?'checked':'')+'>Включить в рассылки этого салона</label>'+
       '<label class="field">Валюта закупки<select data-wf="currency">'+currencies.map(c=>'<option '+(c===d.currency?'selected':'')+'>'+c+'</option>').join('')+'</select></label>'+
       Object.entries(fees).map(([k,label])=>input(k,label+', ₽',d.fees[k]??0,'number','min="0" max="1000000000" step="0.01" required')).join('')+'</fieldset><p class="footnote">Суммы подставляются в новые расчёты этого поставщика. Менеджер проверяет расходы и курс перед сохранением варианта.</p><button class="btn primary">Сохранить тариф</button></form>':'<p>Выберите поставщика для настройки тарифов.</p>')+'</section></div>'+
-      (p?'<form id="wf-policy" class="surface detail-body"><h2 class="section-title">Сроки напоминаний</h2><fieldset class="fields">'+input('supplier_hours','Поставщику, часов',p.supplier_hours,'number','min="1" max="168" required')+input('escalation_hours','Ответственному менеджеру, часов',p.escalation_hours,'number','min="1" max="336" required')+input('client_days','После отправки КП, дней',p.client_days,'number','min="1" max="30" required')+'</fieldset>'+(network.manager_flow?'<h3>Допуски при сравнении с заявкой</h3><fieldset class="fields">'+input('year_slack','Отклонение по году, лет',p.year_slack??0,'number','min="0" max="10" required')+input('km_slack','Превышение пробега, км',p.km_slack??0,'number','min="0" max="1000000" required')+input('budget_pct','Превышение бюджета, %',p.budget_pct??0,'number','min="0" max="100" step="0.1" required')+'</fieldset>':'')+'<button class="btn">Сохранить сроки</button></form>':'');
+      policyHtml();
+  }
+  function policyHtml(){
+    const p=policyDraft;
+    if(!network)return error?'<p role="alert" class="error">'+esc(error)+'</p>'+action('network','Повторить загрузку'):'<p role="status">Загружаем сроки и допуски…</p>';
+    return (p?'<form id="wf-policy" class="surface detail-body"><h2 class="section-title">Сроки напоминаний</h2><fieldset class="fields">'+input('supplier_hours','Поставщику, часов',p.supplier_hours,'number','min="1" max="168" required')+input('escalation_hours','Ответственному менеджеру, часов',p.escalation_hours,'number','min="1" max="336" required')+input('client_days','После отправки КП, дней',p.client_days,'number','min="1" max="30" required')+'</fieldset>'+(network.manager_flow?'<h3>Допуски при сравнении с заявкой</h3><fieldset class="fields">'+input('year_slack','Отклонение по году, лет',p.year_slack??0,'number','min="0" max="10" required')+input('km_slack','Превышение пробега, км',p.km_slack??0,'number','min="0" max="1000000" required')+input('budget_pct','Превышение бюджета, %',p.budget_pct??0,'number','min="0" max="100" step="0.1" required')+'</fieldset>':'')+'<button class="btn">Сохранить сроки</button></form>':'');
   }
   function orderHtml(o){
     if(!o)return '';
@@ -78,9 +83,10 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     const selection=!inbox.order&&chosen&&request()?.status==='won'?'<section class="domain-box"><h3>Выбор клиента</h3><b>'+esc(chosen.title)+'</b><span class="sub">КП № '+esc(chosen.number)+' · '+esc(Number(chosen.price).toLocaleString('ru-RU'))+' ₽</span></section>':'';
     const carPicker=sentCars.length?'<label class="field">Какую машину выбрал клиент<select data-wf="car" required><option value="">Выберите из отправленных КП</option>'+sentCars.map(c=>'<option value="'+esc(c.offer+'/'+c.option)+'" '+(v.car===c.offer+'/'+c.option?'selected':'')+'>'+esc(c.title)+' · '+esc(Number(c.price).toLocaleString('ru-RU'))+' ₽ · КП № '+esc(c.number)+'</option>').join('')+'</select></label>':'';
     const unlinked=request()?.status==='won'&&!request()?.archived_at&&!chosen&&sentCars.length;
+    const reasonPicker='<div class="field"><label for="feedback-reason">Причина отказа</label><select id="feedback-reason" data-wf="reason" required><option value="">Выберите причину</option>'+(inbox.loss_reasons||['Другое']).map(r=>'<option value="'+esc(r)+'"'+(v.reason===r?' selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div>';
     const feedback=unlinked?'<form class="domain-box" id="wf-link-car">'+carPicker+'<button class="btn small">Записать выбранную машину</button></form>':request()?.status==='think'?'<form class="domain-box" id="wf-feedback"><h3>Реакция клиента на КП</h3><label class="field">Итог<select data-wf="outcome">'+
       [['think','Продолжает выбирать'],['won','Заказ оформлен'],['lost','Отказ'],['no_answer','Не дозвонились']].map(([key,title])=>'<option value="'+key+'" '+((v.outcome||'think')===key?'selected':'')+'>'+title+'</option>').join('')+
-      '</select></label>'+(v.outcome==='won'?carPicker:'')+input('note','Комментарий, при отказе укажите причину',v.note)+input('next','Следующий контакт',v.next,'datetime-local')+'<button class="btn small">Записать результат</button></form>':'';
+      '</select></label>'+(v.outcome==='won'?carPicker:v.outcome==='lost'?reasonPicker:'')+input('note','Комментарий',v.note)+input('next','Следующий контакт',v.next,'datetime-local')+'<button class="btn small">Записать результат</button></form>':'';
     const sourcePanel='<details class="domain-box"><summary>МойСклад, Авто.ру и Авито</summary>'+sources+(writable?action('retry','Обновить поиск')+
       '<div class="row wrap"><a class="btn small ghost" target="_blank" rel="noreferrer" href="https://auto.ru/cars/all/">Открыть Авто.ру</a><a class="btn small ghost" target="_blank" rel="noreferrer" href="https://www.avito.ru/rossiya/avtomobili?q='+encodeURIComponent(request()?.model||'')+'">Найти на Авито</a></div><form id="wf-listing"><h4>Добавить объявление по ссылке</h4>'+input('listingUrl','Ссылка на объявление',v.listingUrl,'url','required')+input('listingTitle','Автомобиль',v.listingTitle,'text','required')+input('listingPrice','Цена объявления, ₽',v.listingPrice,'number','min="1"')+listingFields(v)+'<button class="btn small">Сохранить объявление</button></form>':'')+'</details>';
     const answered=threads.filter(t=>t.messages?.some(m=>m.incoming)).length;
@@ -208,10 +214,11 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
       }
       if(form.id==='wf-feedback'||form.id==='wf-link-car'){
         const d=request(), outcome=form.id==='wf-link-car'?'won':formValues.outcome||'think', note=String(formValues.note||'').trim();
-        if(outcome==='lost'&&!note){flash('Укажите причину отказа');return;}
+        const reason=formValues.reason;
+        if(outcome==='lost'&&(!reason||reason==='Другое'&&!note)){flash('Выберите причину. Для «Другое» нужен комментарий');return;}
         if(outcome==='no_answer'&&!formValues.next){flash('Укажите время следующего звонка');return;}
         const next=['no_answer','think'].includes(outcome)&&formValues.next?new Date(formValues.next).toISOString():null;
-        const data={status:outcome==='no_answer'?'think':outcome,next_contact_at:next,...(outcome==='lost'?{reasons:['Другое'],main_reason:'Другое',note}:{})};
+        const data={status:outcome==='no_answer'?'think':outcome,next_contact_at:next,...(outcome==='lost'?{reasons:[reason],main_reason:reason,note}:{})};
         const payload={id,version:d.version,result:outcome==='no_answer'?'no_answer':'connected',note,data};
         const key=JSON.stringify([payload,formValues.car]);if(tokens.feedbackKey!==key){tokens.feedbackKey=key;tokens.feedback=crypto.randomUUID();}
         if(outcome==='won'&&inbox.sent_cars?.length){
@@ -244,5 +251,5 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     }
     return d;
   }
-  return {savePhotos,extended:()=>!!inbox?.manager_flow,reset,load,networkLoad,networkHtml,inboxHtml,photoPicker,existingPhotos,dirty:()=>edited,busy:()=>busy};
+  return {savePhotos,extended:()=>!!inbox?.manager_flow,reset,load,networkLoad,networkHtml,policyHtml,inboxHtml,photoPicker,existingPhotos,dirty:()=>edited,busy:()=>busy};
 };

@@ -74,7 +74,7 @@ begin
   if o.market_median is null then reasons:=reasons||'"Медиана рынка не указана"'::jsonb;
   elsif o.client_price<o.market_median*(1-(s.pricing->>'median_pct')::numeric/100) then reasons:=reasons||'"Цена ниже порога рынка"'::jsonb; end if;
  end if;
- if coalesce((s.pricing->>'margin_enabled')::boolean,true) and margin<(s.pricing->>'margin_pct')::numeric then reasons:=reasons||'"Маржа ниже порога"'::jsonb; end if;
+ if coalesce((s.pricing->>'margin_enabled')::boolean,true) and (o.client_price-o.total_cost)*100<o.purchase_rub*(s.pricing->>'margin_pct')::numeric then reasons:=reasons||'"Маржа ниже порога"'::jsonb; end if;
  fingerprint:=md5(jsonb_build_array(o.title,o.description,o.scenario,o.currency,o.input,o.calculation,o.client_price,o.market_median,o.term,s.pricing)::text);
  if cardinality(o.photo_ids)>0 then fingerprint:=md5(fingerprint||o.photo_ids::text); end if;
  return jsonb_build_object('margin_pct',margin,'reasons',reasons,'fingerprint',fingerprint,'needs_approval',jsonb_array_length(reasons)>0,
@@ -88,14 +88,16 @@ returns jsonb language plpgsql security invoker set search_path=public,pg_temp a
 declare
  a public.app_users%rowtype; r public.crm_requests%rowtype; s public.dealer_settings%rowtype; o public.request_options%rowtype; old public.request_options%rowtype;
  f public.request_offers%rowtype; asset public.dealer_assets%rowtype;
- calc jsonb; inp jsonb; item text; n numeric; purchase numeric; rate numeric; cost numeric; price numeric; median numeric; reasons jsonb;
+ calc jsonb; applied_rule jsonb; fixed_rates jsonb; inp jsonb; item text; n numeric; purchase numeric; rate numeric; cost numeric; price numeric; median numeric; reasons jsonb;
  evaluation jsonb; validation jsonb:='{}'; ids uuid[]; cars jsonb:='[]'; num integer; rid uuid; decision text; note text; amount integer; out jsonb;
 begin
  select * into a from public.app_users where tg_id=p_actor and active;
  if not found or a.role not in ('admin','owner','manager') then raise exception 'crm_forbidden'; end if;
  insert into public.dealer_settings(company_id) values(a.company_id) on conflict do nothing;
  select * into s from public.dealer_settings where company_id=a.company_id;
- if p_action='settings.get' then return jsonb_build_object('settings',to_jsonb(s)); end if;
+ if p_action='settings.get' then
+  return (select jsonb_build_object('settings',to_jsonb(ds)||jsonb_build_object('operations',c.operations)) from dealer_settings ds join app_companies c on c.id=ds.company_id where c.id=a.company_id);
+ end if;
  if p_action='settings.save' then
   if a.role not in ('admin','owner') then raise exception 'crm_forbidden'; end if;
   select * into s from public.dealer_settings where company_id=a.company_id for update;
@@ -106,12 +108,21 @@ begin
   if jsonb_typeof(p->'pricing'->'median_enabled') is distinct from 'boolean' or jsonb_typeof(p->'pricing'->'margin_enabled') is distinct from 'boolean' then raise exception 'backend_bad_data'; end if;
   if coalesce(p->'exchange'->>'mode','') not in ('percent','add','fixed') then raise exception 'backend_bad_data'; end if;
   foreach item in array array['percent','add','fixed'] loop n:=(p->'exchange'->>item)::numeric; if n is null or n<0 or n>100000 or n='NaN'::numeric then raise exception 'backend_bad_data'; end if; end loop;
+  fixed_rates:=coalesce(p->'exchange'->'fixed_rates',s.exchange->'fixed_rates','{}'::jsonb);
+  if jsonb_typeof(fixed_rates) is distinct from 'object' or fixed_rates-array['JPY','CNY','USD','EUR']<>'{}'::jsonb then raise exception 'backend_bad_data'; end if;
+  for item in select jsonb_object_keys(fixed_rates) loop
+   if jsonb_typeof(fixed_rates->item)<>'number' or (fixed_rates->>item)::numeric not between 0.00000001 and 100000 then raise exception 'backend_bad_data'; end if;
+  end loop;
   if (p->'exchange'->>'fixed')::numeric<=0 then raise exception 'backend_bad_data'; end if;
   if (p->>'valid_days')::integer not between 1 and 60 then raise exception 'backend_bad_data'; end if;
   if nullif(p->>'letterhead_id','') is not null and not exists(select 1 from public.dealer_assets where id=(p->>'letterhead_id')::uuid and company_id=a.company_id) then raise exception 'crm_not_found'; end if;
-  update public.dealer_settings set dealer=p->'dealer',pricing=p->'pricing',exchange=p->'exchange',valid_days=(p->>'valid_days')::integer,letterhead_id=nullif(p->>'letterhead_id','')::uuid,revision=revision+1,updated_at=now() where company_id=a.company_id returning * into s;
+  if p ? 'operations' then
+   if not crm_valid_operations(p->'operations') then raise exception 'backend_bad_settings'; end if;
+   update app_companies set operations=p->'operations' where id=a.company_id and operations is distinct from p->'operations';
+  end if;
+  update public.dealer_settings set dealer=p->'dealer',pricing=p->'pricing',exchange=(p->'exchange')||jsonb_build_object('fixed_rates',fixed_rates),valid_days=(p->>'valid_days')::integer,letterhead_id=nullif(p->>'letterhead_id','')::uuid,revision=revision+1,updated_at=now() where company_id=a.company_id returning * into s;
   insert into public.dealer_events(company_id,actor_id,kind,data) values(a.company_id,p_actor,'settings.updated',jsonb_build_object('revision',s.revision));
-  return jsonb_build_object('settings',to_jsonb(s));
+  return jsonb_build_object('settings',to_jsonb(s)||jsonb_build_object('operations',(select operations from app_companies where id=a.company_id)));
  end if;
  if p_action='asset.save' then
   if a.role not in ('admin','owner') then raise exception 'crm_forbidden'; end if;
@@ -146,11 +157,15 @@ begin
   if coalesce(inp->>'quote_mode','itemized') not in ('itemized','turnkey') or jsonb_typeof(coalesce(inp->'vehicle','{}'))<>'object' or length(coalesce(inp->'vehicle','{}')::text)>1600 then raise exception 'backend_bad_data'; end if;
   foreach item in array array['purchase','logistics','duty','recycling','documents','commission'] loop n:=coalesce((inp->>item)::numeric,0); if n<0 or n>100000000000 or n='NaN'::numeric then raise exception 'backend_bad_data'; end if; end loop;
   purchase:=(inp->>'purchase')::numeric; if purchase is null or purchase<=0 then raise exception 'backend_bad_data'; end if;
+  applied_rule:=s.exchange-'fixed_rates';
   if p->>'scenario'='import' then
+   if (s.exchange->'fixed_rates') ? (p->>'currency') then
+    applied_rule:=jsonb_build_object('mode','fixed','fixed',s.exchange->'fixed_rates'->(p->>'currency'));
+   end if;
    if coalesce(p->>'currency','') not in ('CNY','JPY','USD','EUR') then raise exception 'backend_bad_data'; end if;
    rate:=(inp->>'base_rate')::numeric;
-   if rate is null or rate<=0 or rate>100000 or rate='NaN'::numeric then raise exception 'backend_bad_data'; end if;
-   rate:=case s.exchange->>'mode' when 'fixed' then (s.exchange->>'fixed')::numeric when 'add' then rate+(s.exchange->>'add')::numeric else rate*(1+(s.exchange->>'percent')::numeric/100) end;
+   if applied_rule->>'mode'<>'fixed' and (rate is null or rate<=0 or rate>100000 or rate='NaN'::numeric) then raise exception 'backend_bad_data'; end if;
+   rate:=case applied_rule->>'mode' when 'fixed' then (applied_rule->>'fixed')::numeric when 'add' then rate+(applied_rule->>'add')::numeric else rate*(1+(applied_rule->>'percent')::numeric/100) end;
   else rate:=1; end if;
   purchase:=round(purchase*rate,2);
   cost:=round(purchase+coalesce((inp->>'logistics')::numeric,0)+coalesce((inp->>'commission')::numeric,0)+case when p->>'scenario'='import' then coalesce((inp->>'duty')::numeric,0)+coalesce((inp->>'recycling')::numeric,0)+coalesce((inp->>'documents')::numeric,0) else 0 end,2);
@@ -158,7 +173,7 @@ begin
   price:=(p->>'client_price')::numeric; median:=nullif(p->>'market_median','')::numeric;
   if price is null or price<cost or price>100000000000 or price='NaN'::numeric then raise exception 'backend_price_below_cost'; end if;
   if median is not null and (median<=0 or median>100000000000 or median='NaN'::numeric) then raise exception 'backend_bad_data'; end if;
-  calc:=jsonb_build_object('purchase_rub',purchase,'effective_rate',rate,'exchange_rule',s.exchange,'input',inp,'total_cost',cost,'calculated_at',now(),'rate_source','manual');
+  calc:=jsonb_build_object('purchase_rub',purchase,'effective_rate',rate,'exchange_rule',applied_rule,'input',inp,'total_cost',cost,'calculated_at',now(),'rate_source',case when p->>'scenario'='rf' then 'RUB' when applied_rule->>'mode'='fixed' then 'company' else 'manual' end);
   if old.id is null then
    insert into public.request_options(request_id,company_id,title,description,scenario,currency,input,calculation,purchase_rub,total_cost,client_price,market_median,term,source_name,created_by)
    values(r.id,a.company_id,trim(p->>'title'),coalesce(p->>'description',''),p->>'scenario',case when p->>'scenario'='rf' then 'RUB' else p->>'currency' end,inp,calc,purchase,cost,price,median,coalesce(p->>'term',''),coalesce(p->>'source_name',''),p_actor) returning * into o;
@@ -208,7 +223,7 @@ begin
   end loop;
   select coalesce(max(number),0)+1 into num from public.request_offers where request_id=r.id;
   insert into public.request_offers(company_id,request_id,number,model,validation,option_ids,actor_id,letterhead_id)
-  values(a.company_id,r.id,num,jsonb_build_object('createdAt',now(),'validUntil',now()+s.valid_days*interval '1 day','client',r.client_name,'manager',a.name,'dealer',s.dealer,'cars',cars),validation,ids,p_actor,s.letterhead_id) returning * into f;
+  values(a.company_id,r.id,num,jsonb_build_object('createdAt',now(),'validUntil',now()+s.valid_days*interval '1 day','client',r.client_name,'manager',a.name,'dealer',s.dealer,'offerNote',(select operations->>'offer_note' from app_companies where id=r.company_id),'cars',cars),validation,ids,p_actor,s.letterhead_id) returning * into f;
   insert into public.crm_activity(company_id,request_id,actor_id,kind,data) values(a.company_id,r.id,p_actor,'offer.created',jsonb_build_object('offer_id',f.id,'number',num));
   update public.crm_requests set updated_at=now() where id=r.id;
   return jsonb_build_object('offer',to_jsonb(f));

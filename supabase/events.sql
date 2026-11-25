@@ -8,7 +8,9 @@ returns table(recipient bigint) language sql stable security invoker set search_
  join crm_requests r on r.id=e.request_id and r.company_id=e.company_id and r.archived_at is null
  join app_users u on u.company_id=e.company_id and u.active and u.role in ('manager','owner','admin')
  left join request_options o on o.id::text=e.data->>'option_id' and o.request_id=r.id and not o.archived
- where e.id=p_activity
+ join app_companies c on c.id=r.company_id
+ where e.id=p_activity and not ((c.operations->'muted_events') ?
+   (case when e.kind like 'price.%' then 'approval' when e.kind='car.chosen' then 'order' else 'assignment' end))
  and not exists(select 1 from crm_activity later where later.request_id=r.id and later.id>e.id and (
   (e.kind like 'price.%' and later.kind like 'price.%' and later.data->>'option_id'=e.data->>'option_id') or
   (e.kind in ('created','updated') and later.kind='updated' and later.data->>'from_assigned_to' is distinct from later.data->>'assigned_to')))

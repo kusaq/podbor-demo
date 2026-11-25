@@ -5,6 +5,55 @@ create table if not exists public.app_companies (
  name text not null,
  created_at timestamptz not null default now()
 );
+-- The same catalogue is returned to the desktop CRM, Mini App and bot.
+create or replace function public.crm_operation_defaults() returns jsonb
+language sql immutable set search_path=public,pg_temp as $$
+ select '{
+ "loss_reasons": [
+  "Дорого",
+  "Нашёл дешевле у конкурента",
+  "Не договорились о цене",
+  "Долгая поставка",
+  "Нужна машина срочно",
+  "Не смогли подобрать",
+  "Не подошли год, пробег или поколение",
+  "Не подошли цвет или комплектация",
+  "Не устроило состояние или история",
+  "Не одобрили кредит или лизинг",
+  "Нет денег сейчас",
+  "Не устроила предоплата",
+  "Не устроили договор или гарантии",
+  "Передумал",
+  "Отложил покупку",
+  "Купил в другом месте",
+  "Перестал отвечать",
+  "Другое"
+ ],
+ "supplier_instruction": "Ответьте на это сообщение. Укажите машину, цену, валюту и срок. Уточните, входит ли доставка. Фото одной машины можно прислать альбомом.",
+ "offer_note": "",
+ "active_sources": ["stock","market"],
+ "muted_events": []
+}'::jsonb
+$$;
+alter table public.app_companies add column if not exists operations jsonb not null default public.crm_operation_defaults();
+create or replace function public.crm_valid_operations(cfg jsonb) returns boolean
+language plpgsql immutable set search_path=public,pg_temp as $$
+begin
+ if jsonb_typeof(cfg) is distinct from 'object' or
+    cfg - array['loss_reasons','supplier_instruction','offer_note','muted_events','active_sources'] <> '{}'::jsonb or
+    jsonb_typeof(cfg->'loss_reasons') is distinct from 'array' or jsonb_typeof(cfg->'muted_events') is distinct from 'array' or
+    jsonb_typeof(cfg->'supplier_instruction') is distinct from 'string' or jsonb_typeof(cfg->'offer_note') is distinct from 'string' then return false; end if;
+ if jsonb_typeof(cfg->'active_sources') is distinct from 'array' or not ((cfg->'active_sources') <@ '["stock","market"]'::jsonb) then return false; end if;
+ if length(trim(cfg->>'supplier_instruction')) not between 1 and 700 or length(cfg->>'offer_note')>700 or
+    (cfg->>'supplier_instruction') ~* '(@|https?://|www\.|t\.me/|[+]?[0-9][0-9 ()-]{8,}[0-9])' then return false; end if;
+ return jsonb_array_length(cfg->'loss_reasons') between 1 and 80 and (cfg->'loss_reasons') ? 'Другое'
+   and not exists(select 1 from jsonb_array_elements(cfg->'loss_reasons') as x(v)
+     where jsonb_typeof(v)<>'string' or length(v#>>'{}') not between 1 and 160 or (v#>>'{}')<>trim(v#>>'{}') or (v#>>'{}') ~ '[[:cntrl:]]')
+   and (select count(distinct lower(v))=count(*) from jsonb_array_elements_text(cfg->'loss_reasons') x(v))
+   and jsonb_array_length(cfg->'muted_events')<=9 and (cfg->'muted_events') <@ '["assignment","approval","order","reply","supplier","escalation","feedback","contact","listing"]'::jsonb;
+end $$;
+revoke all on function public.crm_operation_defaults(),public.crm_valid_operations(jsonb) from public,anon,authenticated;
+grant execute on function public.crm_operation_defaults(),public.crm_valid_operations(jsonb) to service_role;
 insert into public.app_companies(slug,name) values ('podbor-demo','Основная компания') on conflict(slug) do nothing;
 alter table public.app_users add column if not exists company_id uuid references public.app_companies(id);
 update public.app_users set company_id=(select id from public.app_companies where slug='podbor-demo') where company_id is null;
@@ -89,6 +138,10 @@ begin
  comment := coalesce(p_data->>'note',current_row.note,'');
  if new_status='lost' then
   if jsonb_typeof(r)<>'array' or jsonb_array_length(r)=0 or jsonb_array_length(r)>20 then raise exception 'crm_reason_required'; end if;
+  if exists(select 1 from jsonb_array_elements(r) x(reason) where jsonb_typeof(reason)<>'string') then raise exception 'crm_reason_unknown'; end if;
+  if exists(select 1 from jsonb_array_elements_text(r) reason
+    where not (coalesce(current_row.reasons,'[]'::jsonb) ? reason or
+      (select operations->'loss_reasons' from app_companies where id=actor.company_id) ? reason)) then raise exception 'crm_reason_unknown'; end if;
   if not r ? main then main := r->>0; end if;
   if r ? 'Другое' and length(trim(comment))=0 then raise exception 'crm_comment_required'; end if;
  else r:='[]'; main:=''; end if;
@@ -161,6 +214,7 @@ begin
    and (p_status='' or status=p_status or (p_status='overdue' and next_contact_at<now() and status in ('search','think'))) and (p_assignee='' or (p_assignee='unassigned' and assigned_to is null) or assigned_to::text=p_assignee)
  ), paged as (select * from filtered order by updated_at desc,id limit 100 offset greatest(0,p_page)*100)
  select jsonb_build_object(
+  'loss_reasons',(select operations->'loss_reasons' from app_companies where id=actor.company_id),
   'requests',coalesce((select jsonb_agg(to_jsonb(paged)) from paged),'[]'::jsonb),
   'total',(select count(*) from filtered),
   'summary',(select jsonb_build_object('total',count(*),'search',count(*) filter(where status='search'),'think',count(*) filter(where status='think'),'lost',count(*) filter(where status='lost'),'won',count(*) filter(where status='won'),'unassigned',count(*) filter(where assigned_to is null),'overdue',count(*) filter(where next_contact_at<now() and status in ('search','think'))) from base),

@@ -72,7 +72,7 @@ async function hashValue(value: string): Promise<string> {
 }
 function crmError(error: { code?: string; message?: string }): Response {
   const message = error.message ?? '';
-  const names = ['crm_forbidden','crm_not_found','crm_conflict','crm_bad_assignee','crm_bad_status','crm_reason_required','crm_comment_required','crm_consent_required','crm_bad_comment','backend_bad_data','backend_bad_action','backend_price_below_cost','backend_approval_required','backend_archived','backend_limit','backend_offer_stale','backend_offer_expired','backend_closed'];
+  const names = ['crm_forbidden','crm_not_found','crm_conflict','crm_bad_assignee','crm_bad_status','crm_reason_required','crm_reason_unknown','backend_bad_settings','crm_comment_required','crm_consent_required','crm_bad_comment','backend_bad_data','backend_bad_action','backend_price_below_cost','backend_approval_required','backend_archived','backend_limit','backend_offer_stale','backend_offer_expired','backend_closed'];
   const name = names.find((x) => message.includes(x));
   if (name) return json({ error: name }, name === 'crm_forbidden' ? 403 : name === 'crm_not_found' ? 404 : name === 'crm_conflict' ? 409 : 400);
   if (error.code === '23505') return json({ error: 'crm_duplicate' }, 409);
@@ -228,7 +228,7 @@ Deno.serve(async (req) => {
     if (!actions.includes(operation)) return json({ error: 'backend_bad_action' }, 400);
     const data: Record<string, unknown> = { ...p };
     const fields: Record<string,string[]> = {
-      'settings.get':[], 'settings.save':['revision','dealer','pricing','exchange','valid_days','letterhead_id'],
+      'settings.get':[], 'settings.save':['revision','dealer','pricing','exchange','valid_days','letterhead_id','operations'],
       'asset.save':['name','content_type','data_url'], 'asset.get':['id'], 'request.get':['request_id','page'],
       'option.save':['request_id','id','version','title','description','scenario','currency','input','client_price','market_median','term','source_name'],
       'option.review':['request_id','id','version','decision','note'], 'option.archive':['request_id','id','version','archived'],
@@ -250,7 +250,7 @@ Deno.serve(async (req) => {
           !Number.isSafeInteger(data.valid_days) || Number(data.valid_days)<1 || Number(data.valid_days)>60 || data.letterhead_id && !uuid(data.letterhead_id)) return json({ error: 'backend_bad_data' }, 400);
       data.dealer={name:dealer.name,inn:dealer.inn,phone:dealer.phone,address:dealer.address};
       data.pricing={median_enabled:pricing.median_enabled,median_pct:Number(pricing.median_pct),margin_enabled:pricing.margin_enabled,margin_pct:Number(pricing.margin_pct)};
-      data.exchange={mode:exchange.mode,percent:Number(exchange.percent),add:Number(exchange.add),fixed:Number(exchange.fixed)};
+      data.exchange={mode:exchange.mode,percent:Number(exchange.percent),add:Number(exchange.add),fixed:Number(exchange.fixed),...(Object.hasOwn(exchange,'fixed_rates')?{fixed_rates:exchange.fixed_rates}:{})};
     }
     if (operation === 'asset.save') {
       if (!str(data.name,200) || !String(data.name).trim() || !['application/pdf','image/png','image/jpeg'].includes(String(data.content_type)) || !str(data.data_url,2800000)) return json({ error: 'backend_bad_data' }, 400);
@@ -267,7 +267,7 @@ Deno.serve(async (req) => {
           !['rf','import'].includes(String(data.scenario)) || !['RUB','CNY','JPY','USD','EUR'].includes(String(data.currency)) || !number(data.client_price,0.01,100000000000) || data.market_median != null && data.market_median !== '' && !number(data.market_median,0.01,100000000000)) return json({ error: 'backend_bad_data' }, 400);
       const input = data.input as Record<string,unknown>;
       if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k=>!['purchase','logistics','duty','recycling','documents','commission','base_rate','quote_mode','vehicle'].includes(k)) ||
-          !number(input.purchase,0.01,100000000000) || ['logistics','duty','recycling','documents','commission'].some(k=>!number(input[k],0,100000000000)) || data.scenario==='import' && !number(input.base_rate,0.00000001,100000)) return json({ error: 'backend_bad_data' }, 400);
+          !number(input.purchase,0.01,100000000000) || ['logistics','duty','recycling','documents','commission'].some(k=>!number(input[k],0,100000000000)) || input.base_rate != null && !number(input.base_rate,0,100000)) return json({ error: 'backend_bad_data' }, 400);
       const mode=input.quote_mode??'itemized', vehicle=input.vehicle??{};
       if (!['turnkey','itemized'].includes(String(mode)) || !vehicle || typeof vehicle!=='object' || Array.isArray(vehicle) || JSON.stringify(vehicle).length>1200) return json({error:'backend_bad_data'},400);
       data.input={...Object.fromEntries(Object.entries(input).filter(([k])=>!['quote_mode','vehicle'].includes(k)).map(([k,v])=>[k,Number(v)])),...(input.quote_mode?{quote_mode:mode}:{}),...(input.vehicle?{vehicle}:{})};data.client_price=Number(data.client_price);data.market_median=data.market_median ? Number(data.market_median) : null;
