@@ -75,6 +75,9 @@ begin
   raise exception 'unoffered car selected';
  exception when raise_exception then if sqlerrm<>'crm_bad_data' then raise;end if;end;
  result:=crm_workflow(81101,'choose_car',a);
+ if (select snapshot->'car' from crm_orders where request_id=rid) is distinct from offer->'model'->'cars'->0 or
+  (select snapshot->'calculation' from crm_orders where request_id=rid) is distinct from offer->'internal_quotes'->oid::text->'calculation'
+  then raise exception 'order must preserve the terms of the sent offer'; end if;
  if (result->'choice'->>'price')::numeric<>1050000 or result->'choice'->>'option'<>oid::text then raise exception 'choice lost its offer snapshot';end if;
  perform crm_workflow(81101,'choose_car',a);
  if (select count(*) from crm_activity where request_id=rid and kind='car.chosen')<>1 or

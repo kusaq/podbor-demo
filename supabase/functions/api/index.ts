@@ -6,6 +6,15 @@ import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 const BOT_TOKEN = (Deno.env.get("BOT_TOKEN") ?? "").trim();
 console.log("bot token", { length: BOT_TOKEN.length, looksValid: /^\d+:[A-Za-z0-9_-]{30,}$/.test(BOT_TOKEN), botId: BOT_TOKEN.split(":")[0] });
 const BOOT_ADMINS = (Deno.env.get("BOOT_ADMINS") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+// The static site and the Edge functions can arrive before the database rollout.
+let managerSchemaReady=false;
+async function hasManagerSchema(){
+  if(!managerSchemaReady){
+    const probe=await db.from('crm_orders').select('id').limit(0);
+    managerSchemaReady=!probe.error;
+  }
+  return managerSchemaReady;
+}
 const MAX_AGE_SEC = 24 * 60 * 60;
 const ROLES = ["manager", "owner", "supplier", "admin"];
 
@@ -185,10 +194,12 @@ Deno.serve(async (req) => {
     if (result.error) return json({ error: 'desktop_db' }, 500);
     return json({ code: code.match(/.{4}/g)!.join('-'), expiresAt });
   }
+  const newQuote=action==='backend.option.save'?p.input:action==='workflow.option.fromReply'?p.option?.input:null;
+  if((action==='workflow.listing.call'||newQuote?.quote_mode==='turnkey'||newQuote?.vehicle)&&!await hasManagerSchema())return json({error:'backend_update_pending'},503);
   if (action?.startsWith('workflow.')) {
     if (!['admin','owner','manager'].includes(me.role)) return json({error:'crm_forbidden'},403);
     const op=action.slice(9);
-    if (!['network','terms.save','policy.save','inbox','choose_car','dispatch','photo','option.fromReply','reply','search.retry','listing.save'].includes(op)) return json({error:'backend_bad_action'},400);
+    if (!['network','terms.save','policy.save','inbox','choose_car','dispatch','photo','option.fromReply','reply','search.retry','listing.save','listing.call'].includes(op)) return json({error:'backend_bad_action'},400);
     if (JSON.stringify(p).length>20000) return json({error:'backend_bad_data'},400);
     if (op==='choose_car') {
       const ids=[p.request_id,p.offer,p.option,p.token];
@@ -204,7 +215,12 @@ Deno.serve(async (req) => {
       if (!note || note.length>2500 || names.some(n=>n.length>=3&&note.toLowerCase().includes(n)) || /https?:|www\.|t\.me\/|@|(?:\+\d[\d ()-]{8,}\d|\b[78](?:[ ()-]*\d){10}\b)/i.test(note)) return json({error:'backend_bad_data'},400);
     }
     const result=await db.rpc('crm_workflow',{p_actor:myId,p_action:op,p});
-    return result.error ? crmError(result.error) : json(result.data);
+    if(result.error)return crmError(result.error);
+    if(op==='inbox'||op==='network'){
+      const data=result.data||{};
+      return json({...data,manager_flow:op==='inbox'?Object.hasOwn(data,'order'):data.schema_version===2});
+    }
+    return json(result.data);
   }
   if (action?.startsWith('backend.')) {
     const operation = action.slice('backend.'.length);
@@ -250,9 +266,11 @@ Deno.serve(async (req) => {
       if (data.id && (!uuid(data.id) || !version(data.version)) || !str(data.title,200) || !String(data.title).trim() || !str(data.description ?? '',2000) || !str(data.term ?? '',200) || !str(data.source_name ?? '',200) ||
           !['rf','import'].includes(String(data.scenario)) || !['RUB','CNY','JPY','USD','EUR'].includes(String(data.currency)) || !number(data.client_price,0.01,100000000000) || data.market_median != null && data.market_median !== '' && !number(data.market_median,0.01,100000000000)) return json({ error: 'backend_bad_data' }, 400);
       const input = data.input as Record<string,unknown>;
-      if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k=>!['purchase','logistics','duty','recycling','documents','commission','base_rate'].includes(k)) ||
+      if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k=>!['purchase','logistics','duty','recycling','documents','commission','base_rate','quote_mode','vehicle'].includes(k)) ||
           !number(input.purchase,0.01,100000000000) || ['logistics','duty','recycling','documents','commission'].some(k=>!number(input[k],0,100000000000)) || data.scenario==='import' && !number(input.base_rate,0.00000001,100000)) return json({ error: 'backend_bad_data' }, 400);
-      data.input=Object.fromEntries(Object.entries(input).map(([k,v])=>[k,Number(v)]));data.client_price=Number(data.client_price);data.market_median=data.market_median ? Number(data.market_median) : null;
+      const mode=input.quote_mode??'itemized', vehicle=input.vehicle??{};
+      if (!['turnkey','itemized'].includes(String(mode)) || !vehicle || typeof vehicle!=='object' || Array.isArray(vehicle) || JSON.stringify(vehicle).length>1200) return json({error:'backend_bad_data'},400);
+      data.input={...Object.fromEntries(Object.entries(input).filter(([k])=>!['quote_mode','vehicle'].includes(k)).map(([k,v])=>[k,Number(v)])),...(input.quote_mode?{quote_mode:mode}:{}),...(input.vehicle?{vehicle}:{})};data.client_price=Number(data.client_price);data.market_median=data.market_median ? Number(data.market_median) : null;
     }
     if (operation === 'option.review' && (!version(data.version) || !['requested','approved','rejected'].includes(String(data.decision)) || !str(data.note ?? '',2000))) return json({ error: 'backend_bad_data' }, 400);
     if (operation === 'option.archive' && (!version(data.version) || typeof data.archived !== 'boolean')) return json({ error: 'backend_bad_data' }, 400);

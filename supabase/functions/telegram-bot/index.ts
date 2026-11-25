@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 import { BotEngine, privateUpdate, cleanContact, supplierTemplate, boundedBytes, validateIntent, structuredReply } from './core.mjs';
+import { intakeFields, intakePreview } from './intake.mjs';
 import { searchSource } from './sources.mjs';
 import { createOffer } from './pdf.mjs';
 const env=(k:string)=>Deno.env.get(k)||'';
@@ -63,10 +64,34 @@ const ports:any={
  actor,
  help:async(a:any)=>{
   if(a.role==='supplier')return notice(a,'Ответьте на запрос текстом. Фото одной машины можно прислать альбомом. /threads показывает ваши диалоги.');
-  const manual='Откройте кабинет для работы с заявками. /requests показывает заявки, /threads открывает переписку.';
+  const manual='Перешлите сообщение клиента или напишите /new, чтобы создать заявку. /requests показывает заявки, /threads открывает переписку.';
   return notice(a,manual+(AI?' Можно написать задачу текстом. Бот покажет черновик перед подтверждением.':''),[[{text:'Открыть кабинет',web_app:{url:MINI_APP_URL}}]]);
  },
  requests:requestList,threads:threadList,notice,
+ intakeDecision:async(a:any,job:number,id:string,confirm:boolean)=>rpc('bot_intake',{p_actor:a.tg_id,p_job:job,p_action:confirm?'confirm':'cancel',p:{previous:id,desk:new URL('admin.html',MINI_APP_URL).href}}),
+ intakeMessage:async(a:any,m:any,job:number)=>{
+  const forwarded=!!(m.forward_origin||m.forward_from||m.forward_sender_name||m.forward_date);
+  const start=/^\/new(?:@\w+)?(?:\s|$)/i.test(m.text);
+  const lookup=await db.from('bot_intakes').select('*').eq('user_id',a.tg_id).eq('company_id',a.company_id).maybeSingle();
+  if(lookup.error){
+    if(!['PGRST205','42P01'].includes(lookup.error.code))throw Error('database_error');
+    if(!forwarded&&!start)return false;
+    await notice(a,'Создание из пересылки включится после обновления базы. Пока можно внести текст клиента через кабинет.',[[{text:'Открыть кабинет',web_app:{url:MINI_APP_URL}}]]);
+    return true;
+  }
+  const prior=lookup.data;
+  if(!forwarded&&!start&&!prior)return false;
+  const fresh=forwarded||start;
+  const original=start?m.text.replace(/^\/new(?:@\w+)?\s*/i,''):m.text;
+  const parsed=intakeFields(original,m.forward_origin||(m.forward_from?{type:'user',sender_user:m.forward_from}:null));
+  const fields={...(fresh?{}:prior.fields),...parsed};
+  const source=fresh?original:(prior.source_text||original);
+  const preview=intakePreview(fields);
+  const unsafe=Object.entries(fields).find(([key,value])=>['brand','model','generation','years','trim','color'].includes(key)&&(/@|https?:|www\.|t\.me\/|[\r\n]|[+]?\d[\d ()-]{8,}\d/i.test(String(value))||String(fields.client_name||'').length>=3&&String(value).toLowerCase().includes(String(fields.client_name).toLowerCase())));
+  if(unsafe){preview.ready=false;preview.text+='\nУберите контактные данные из параметров автомобиля перед созданием.';}
+  await rpc('bot_intake',{p_actor:a.tg_id,p_job:job,p_action:'save',p:{previous:prior?.revision||null,fields,ready:preview.ready,source,preview:preview.text}});
+  return true;
+ },
  selectRequest:async(a:any,id:string)=>{if(a.role==='supplier')throw Error('crm_forbidden');await rpc('crm_request_detail',{p_actor:a.tg_id,p_id:id});await result(db.from('bot_context').upsert({user_id:a.tg_id,company_id:a.company_id,request_id:id,thread_id:null,offer_id:null,dialogue:[]}));await notice(a,'Заявка выбрана. Пришлите команду текстом.');},
  reviewSupplier:async(a:any,id:string)=>{if(a.role==='supplier')throw Error('crm_forbidden');const m=await result(db.from('bot_messages').select('*').eq('id',id).single());const j=await rpc('bot_thread_access',{p_actor:a.tg_id,p_thread:m.thread_id});await result(db.from('bot_context').upsert({user_id:a.tg_id,company_id:a.company_id,request_id:j.thread.request_id,thread_id:m.thread_id,offer_id:null,dialogue:[{role:'supplier_draft',fields:m.parsed||{},text:m.sanitized_text}]}));await notice(a,'Черновик ответа поставщика\n'+JSON.stringify(m.parsed||{},null,2)+'\nПроверьте данные. Назначьте цену клиенту и расходы в CRM. До подтверждения вариант в CRM не добавляется.');},
  selectThread:async(a:any,id:string)=>{const j=await rpc('bot_thread_access',{p_actor:a.tg_id,p_thread:id});await result(db.from('bot_context').upsert({user_id:a.tg_id,company_id:j.thread.company_id,request_id:j.thread.request_id,thread_id:id,offer_id:null,dialogue:[]}));const history=await result(db.from('bot_messages').select('sanitized_text,actor_id').eq('thread_id',id).order('created_at',{ascending:false}).limit(10));await notice(a,'Последние сообщения\n'+history.reverse().map((m:any)=>(String(m.actor_id)===String(j.thread.supplier_id)?'Поставщик':'Менеджер')+': '+m.sanitized_text).join('\n'));await notice(a,'Диалог '+j.thread.code+' выбран. '+(a.role==='supplier'?'Пришлите ответ по автомобилю.':'Можно написать ответ поставщику. Он будет показан перед отправкой.'));},
@@ -121,7 +146,7 @@ const ports:any={
  decide:async(a:any,id:string,accept:boolean)=>{const previous=await context(a);const out=await rpc('bot_confirm',{p_actor:a.tg_id,p_id:id,p_accept:accept});if(!accept){await notice(a,'Черновик отменён.');return;}const q=await result(db.from('bot_proposals').select('action,request_id').eq('id',id).eq('actor_id',a.tg_id).single());if(q.request_id)await result(db.from('bot_context').upsert({user_id:a.tg_id,company_id:a.company_id,request_id:q.request_id,thread_id:previous.request_id===q.request_id?previous.thread_id||null:null,offer_id:q.action==='create_offer'?out.offer.id:previous.request_id===q.request_id?previous.offer_id||null:null,dialogue:[]}));if(q.action==='create_offer'){await queue(a.tg_id,{offer_id:out.offer.id,caption:'КП №'+out.offer.number+'. Проверьте PDF и отправьте клиенту самостоятельно.'},{actor_id:a.tg_id,proposal_id:id,dedupe_key:'complete:'+id});}else await notice(a,'Выполнено.'+(out.queued?' Запросов поставщикам в очереди: '+out.queued:''),undefined,{dedupe_key:'complete:'+id});}
 };
 const engine=new BotEngine(ports);
-async function authorizeDelivery(row:any){if(row.reminder){const due=await result(db.from('workflow_due').select('key').eq('key',row.dedupe_key).eq('recipient',row.chat_id).maybeSingle());if(!due)return false;}const recipient=await actor(row.chat_id);if(!recipient?.active)return false;if(row.scope_company_id&&recipient.role!=='supplier'&&row.scope_company_id!==recipient.company_id)return false;if(row.proposal_id){const q=await result(db.from('bot_proposals').select('company_id,actor_id,request_id').eq('id',row.proposal_id).single());const owner=await actor(q.actor_id);if(!owner?.active||owner.company_id!==q.company_id||!['admin','owner','manager'].includes(owner.role))return false;if(q.request_id)await rpc('crm_request_detail',{p_actor:owner.tg_id,p_id:q.request_id});}if(row.request_id&&!row.thread_id){await rpc('crm_request_detail',{p_actor:row.actor_id,p_id:row.request_id});await rpc('crm_request_detail',{p_actor:row.chat_id,p_id:row.request_id});}if(!row.thread_id)return row.actor_id?!!(await actor(row.actor_id))?.active:true;
+async function authorizeDelivery(row:any){if(row.reminder){const due=await result(db.from('workflow_due').select('key').eq('key',row.dedupe_key).eq('recipient',row.chat_id).maybeSingle());if(!due)return false;}const recipient=await actor(row.chat_id);if(!recipient?.active)return false;if(row.dedupe_key?.startsWith('intake:')&&(!['manager','owner','admin'].includes(recipient.role)||recipient.company_id!==row.scope_company_id))return false;if(row.scope_company_id&&recipient.role!=='supplier'&&row.scope_company_id!==recipient.company_id)return false;if(row.proposal_id){const q=await result(db.from('bot_proposals').select('company_id,actor_id,request_id').eq('id',row.proposal_id).single());const owner=await actor(q.actor_id);if(!owner?.active||owner.company_id!==q.company_id||!['admin','owner','manager'].includes(owner.role))return false;if(q.request_id)await rpc('crm_request_detail',{p_actor:owner.tg_id,p_id:q.request_id});}if(row.request_id&&!row.thread_id){await rpc('crm_request_detail',{p_actor:row.actor_id,p_id:row.request_id});await rpc('crm_request_detail',{p_actor:row.chat_id,p_id:row.request_id});}if(!row.thread_id)return row.actor_id?!!(await actor(row.actor_id))?.active:true;
  const j=await rpc('bot_thread_access',{p_actor:row.actor_id,p_thread:row.thread_id});if(recipient.role==='supplier'){
    if(String(j.thread.supplier_id)!==String(recipient.tg_id))return false;
    if(String(row.actor_id)===String(row.chat_id)&&!row.reminder)return true;

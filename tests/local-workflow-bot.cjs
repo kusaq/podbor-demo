@@ -4,6 +4,7 @@ const assert=require('node:assert/strict'),{webcrypto,randomInt}=require('node:c
 const {stripTypeScriptTypes}=require('node:module');
 module.exports=async function localBot(db) {
  const base='../supabase/functions/telegram-bot/',core=await import(base+'core.mjs');
+ const intake=await import(base+'intake.mjs');
  const {searchSource}=await import(base+'sources.mjs');
  const env={BOT_TOKEN:'600:local-test',BOT_WORKER_SECRET:'local-worker-'.repeat(4),TELEGRAM_WEBHOOK_SECRET:'local-webhook-'.repeat(4)};
  const messages=[],pending=[];let handler,updateId=randomInt(10000000,90000000),photo;
@@ -16,7 +17,7 @@ module.exports=async function localBot(db) {
   messages.push({...body,message_id});return Response.json({ok:true,result:{message_id}});
  }
  const code=fs.readFileSync(path.join(__dirname,base,'index.ts'),'utf8').replace(/^import .*;\n/gm,'');
- vm.runInNewContext(stripTypeScriptTypes(code,{mode:'transform'}),{...core,searchSource,createClient:()=>db,
+ vm.runInNewContext(stripTypeScriptTypes(code,{mode:'transform'}),{...core,...intake,searchSource,createClient:()=>db,
   Deno:{serve:f=>handler=f,env:{get:k=>env[k]}},EdgeRuntime:{waitUntil:p=>pending.push(p)},crypto:webcrypto,
   URL,Request,Response,Blob,FormData,TextEncoder,TextDecoder,AbortSignal,Uint8Array,btoa,fetch:transport});
  async function invoke(path,headers,body){
@@ -24,6 +25,7 @@ module.exports=async function localBot(db) {
   assert.equal(response.status,200);await Promise.all(pending.splice(0));
  }
  return {messages,drain:()=>invoke('/drain',{'x-worker-secret':env.BOT_WORKER_SECRET},{}),
+  async click(user,data){await invoke('',{'x-telegram-bot-api-secret-token':env.TELEGRAM_WEBHOOK_SECRET},{update_id:++updateId,callback_query:{data,from:{id:user},message:{chat:{type:'private',id:user}}}});},
   photo(bytes){photo=bytes;},
   async send(user,content){
    const id=++updateId;

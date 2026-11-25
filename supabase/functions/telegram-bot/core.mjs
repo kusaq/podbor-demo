@@ -8,11 +8,12 @@ export function privateUpdate(update){const m=update?.message;const cb=update?.c
 export class BotEngine{
  constructor(ports){this.p=ports;}
  async process(job){const u=job.payload;const actor=await this.p.actor(u.callback_query?.from?.id||u.message?.from?.id);if(!actor?.active)return;
-  if(u.callback_query){const data=String(u.callback_query.data||'');if(/^(confirm|cancel):/.test(data)){const [action,id]=data.split(':');if(!UUID.test(id))return;await this.p.decide(actor,id,action==='confirm');return;}if(data.startsWith('review:')){const id=data.slice(7);if(UUID.test(id)&&actor.role!=='supplier')await this.p.reviewSupplier(actor,id);return;}if(data.startsWith('request:')){const id=data.slice(8);if(!UUID.test(id))return;await this.p.selectRequest(actor,id);return;}if(data.startsWith('thread:')){const id=data.slice(7);if(!UUID.test(id))return;await this.p.selectThread(actor,id);return;}return;}
+  if(u.callback_query){const data=String(u.callback_query.data||'');if(/^(leadok|leadno):/.test(data)){const [action,id]=data.split(':');if(UUID.test(id)&&actor.role!=='supplier')await this.p.intakeDecision(actor,job.id,id,action==='leadok');return;}if(/^(confirm|cancel):/.test(data)){const [action,id]=data.split(':');if(!UUID.test(id))return;await this.p.decide(actor,id,action==='confirm');return;}if(data.startsWith('review:')){const id=data.slice(7);if(UUID.test(id)&&actor.role!=='supplier')await this.p.reviewSupplier(actor,id);return;}if(data.startsWith('request:')){const id=data.slice(8);if(!UUID.test(id))return;await this.p.selectRequest(actor,id);return;}if(data.startsWith('thread:')){const id=data.slice(7);if(!UUID.test(id))return;await this.p.selectThread(actor,id);return;}return;}
   const m=u.message;if(!m)return;const original=m.text||m.caption||'';if(/^\/(start|help)(?:@\w+)?$/.test(original.trim())){await this.p.help(actor);return;}
   if(/^\/requests(?:@\w+)?$/.test(original.trim())){await this.p.requests(actor);return;}
   if(/^\/threads(?:@\w+)?$/.test(original.trim())){await this.p.threads(actor);return;}
   if(m.voice){await this.p.notice(actor,'Пришлите сообщение текстом.');return;}
+  if(actor.role!=='supplier'&&m.text&&this.p.intakeMessage&&await this.p.intakeMessage(actor,m,job.id))return;
   if(actor.role==='supplier'&&!await this.p.hasThread(actor,m.reply_to_message?.message_id,m.media_group_id)){await this.p.threads(actor);return;}
   if(actor.role!=='supplier'&&m.reply_to_message)await this.p.hasThread(actor,m.reply_to_message.message_id);
   const text=original;
@@ -43,11 +44,15 @@ export function structuredReply(text,model){
    if(key==='год'&&/^(19|20)\d\d$/.test(value)){fields.years=value;continue;}
    if(key==='пробег'&&/^\d[\d ]{0,9}(?:\s*км)?$/iu.test(value)){fields.mileage=Number(value.replace(/[^\d]/g,''));continue;}
    const price=value.match(/^(\d[\d ]{0,13}(?:[.,]\d{1,2})?)\s*(RUB|JPY|CNY|USD|EUR|₽)$/i);
-   if(key==='цена'&&price){fields.purchase=Number(price[1].replace(/ /g,'').replace(',','.'));fields.currency=price[2]==='₽'?'RUB':price[2].toUpperCase();continue;}
+   if((key==='цена'||key==='под ключ')&&price){if(fields.purchase)return null;if(key==='под ключ')fields.quote_mode='turnkey';fields.purchase=Number(price[1].replace(/ /g,'').replace(',','.'));fields.currency=price[2]==='₽'?'RUB':price[2].toUpperCase();continue;}
+   const fee={доставка:'logistics',пошлина:'duty',утильсбор:'recycling',оформление:'documents',комиссия:'commission'}[key];
+   if(fee&&price&&['RUB','₽'].includes(price[2].toUpperCase())){fields[fee]=Number(price[1].replace(/ /g,'').replace(',','.'));continue;}
+   const attr={поколение:'generation',цвет:'color',комплектация:'trim'}[key];
+   if(attr&&/^[\p{L}\d][\p{L}\d -]{0,40}$/u.test(value)&&!/\d[\d -]{8,}\d/.test(value)){fields[attr]=value;continue;}
    if(key==='срок'&&/^(в наличии|\d{1,3}(?:\s*-\s*\d{1,3})?\s*(?:дней|дня|день))$/iu.test(value)){fields.term=value;continue;}
    return null;
  }
  if(!fields.purchase||!fields.currency)return null;
- const safe=[model,fields.years&&'Год: '+fields.years,fields.mileage!=null&&'Пробег: '+fields.mileage+' км','Цена: '+fields.purchase+' '+fields.currency,fields.term&&'Срок: '+fields.term].filter(Boolean).join('\n');
+ const safe=[model,fields.years&&'Год: '+fields.years,fields.mileage!=null&&'Пробег: '+fields.mileage+' км',(fields.quote_mode==='turnkey'?'Под ключ: ':'Цена: ')+fields.purchase+' '+fields.currency,fields.term&&'Срок: '+fields.term,...Object.entries({generation:'Поколение',color:'Цвет',trim:'Комплектация',logistics:'Доставка, ₽',duty:'Пошлина, ₽',recycling:'Утильсбор, ₽',documents:'Оформление, ₽',commission:'Комиссия, ₽'}).filter(([key])=>fields[key]!=null).map(([key,label])=>label+': '+fields[key])].filter(Boolean).join('\n');
  return {text:safe,parsed:fields};
 }

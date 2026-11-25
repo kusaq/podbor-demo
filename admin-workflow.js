@@ -41,7 +41,22 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
       (d.owned?input('brands','Марки через запятую',d.brands)+'<label class="check field"><input data-wf="enabled" type="checkbox" '+(d.enabled?'checked':'')+'>Получает запросы</label>':'')+
       '<label class="field">Валюта закупки<select data-wf="currency">'+currencies.map(c=>'<option '+(c===d.currency?'selected':'')+'>'+c+'</option>').join('')+'</select></label>'+
       Object.entries(fees).map(([k,label])=>input(k,label+', ₽',d.fees[k]??0,'number','min="0" max="1000000000" step="0.01" required')).join('')+'</fieldset><p class="footnote">Суммы подставляются в новые расчёты этого поставщика. Менеджер проверяет расходы и курс перед сохранением варианта.</p><button class="btn primary">Сохранить тариф</button></form>':'<p>Выберите поставщика для настройки тарифов.</p>')+'</section></div>'+
-      (p?'<form id="wf-policy" class="surface detail-body"><h2 class="section-title">Сроки напоминаний</h2><fieldset class="fields">'+input('supplier_hours','Поставщику, часов',p.supplier_hours,'number','min="1" max="168" required')+input('escalation_hours','Ответственному менеджеру, часов',p.escalation_hours,'number','min="1" max="336" required')+input('client_days','После отправки КП, дней',p.client_days,'number','min="1" max="30" required')+'</fieldset><button class="btn">Сохранить сроки</button></form>':'');
+      (p?'<form id="wf-policy" class="surface detail-body"><h2 class="section-title">Сроки напоминаний</h2><fieldset class="fields">'+input('supplier_hours','Поставщику, часов',p.supplier_hours,'number','min="1" max="168" required')+input('escalation_hours','Ответственному менеджеру, часов',p.escalation_hours,'number','min="1" max="336" required')+input('client_days','После отправки КП, дней',p.client_days,'number','min="1" max="30" required')+'</fieldset>'+(network.manager_flow?'<h3>Допуски при сравнении с заявкой</h3><fieldset class="fields">'+input('year_slack','Отклонение по году, лет',p.year_slack??0,'number','min="0" max="10" required')+input('km_slack','Превышение пробега, км',p.km_slack??0,'number','min="0" max="1000000" required')+input('budget_pct','Превышение бюджета, %',p.budget_pct??0,'number','min="0" max="100" step="0.1" required')+'</fieldset>':'')+'<button class="btn">Сохранить сроки</button></form>':'');
+  }
+  function orderHtml(o){
+    if(!o)return '';
+    const s=o.snapshot||{},car=s.car||{},chosen=s.choice||{};
+    const fields=[['Клиент',s.client],['Телефон',s.phone],['Город доставки',s.city],['Менеджер при оформлении',s.manager],['Из КП',chosen.number?'№ '+chosen.number:null],
+      ['Автомобиль',car.title||chosen.title||'Клиентский выбор ещё не записан'],['Описание',car.description],['Срок',car.term],['Цена клиенту',chosen.price!=null?Number(chosen.price).toLocaleString('ru-RU')+' ₽':null],
+      ['Источник',s.source],['Расчёт стороны',s.quote?.purchase?Number(s.quote.purchase).toLocaleString('ru-RU')+' '+s.currency+(s.quote.quote_mode==='turnkey'?' под ключ':''):null],
+      ['Себестоимость с доставкой',s.cost!=null?Number(s.cost).toLocaleString('ru-RU')+' ₽':null]];
+    return '<section class="domain-box order-card"><h3>Карточка заказа</h3><span class="sub">№ '+esc(o.id.slice(0,8))+' · '+esc(new Date(o.created_at).toLocaleString('ru-RU'))+'</span><dl>'+fields.filter(([,v])=>v).map(([k,v])=>'<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('')+'</dl></section>';
+  }
+  function listingFields(v){
+    if(!inbox?.manager_flow)return '';
+    return input('listingPhone','Телефон продавца',v.listingPhone,'tel','placeholder="+7"')+
+      '<label class="field">Расчёт стороны<select data-wf="listingMode"><option value="itemized">Цена закупки</option><option value="turnkey" '+(v.listingMode==='turnkey'?'selected':'')+'>Под ключ</option></select></label>'+
+      '<details><summary>Характеристики объявления</summary><div class="fields">'+Object.entries(window.PodborLots.attrs).map(([key,label])=>input('listing_'+key,label,v['listing_'+key],['year','mileage'].includes(key)?'number':'text')).join('')+'</div></details>';
   }
   function inboxHtml(){
     const alert=error?'<p role="alert" class="error">'+esc(error)+'</p>':'';
@@ -59,15 +74,16 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
       (m.incoming?(m.option_id?'<span class="status won">В подборе</span>':writable?action('use','Проверить и рассчитать',m.id):''):'')+'</li>').join('');
     const sentCars=inbox.sent_cars||[];
     const chosen=inbox.choice;
-    const selection=chosen&&request()?.status==='won'?'<section class="domain-box"><h3>Выбор клиента</h3><b>'+esc(chosen.title)+'</b><span class="sub">КП № '+esc(chosen.number)+' · '+esc(Number(chosen.price).toLocaleString('ru-RU'))+' ₽</span></section>':'';
+    const selection=!inbox.order&&chosen&&request()?.status==='won'?'<section class="domain-box"><h3>Выбор клиента</h3><b>'+esc(chosen.title)+'</b><span class="sub">КП № '+esc(chosen.number)+' · '+esc(Number(chosen.price).toLocaleString('ru-RU'))+' ₽</span></section>':'';
     const carPicker=sentCars.length?'<label class="field">Какую машину выбрал клиент<select data-wf="car" required><option value="">Выберите из отправленных КП</option>'+sentCars.map(c=>'<option value="'+esc(c.offer+'/'+c.option)+'" '+(v.car===c.offer+'/'+c.option?'selected':'')+'>'+esc(c.title)+' · '+esc(Number(c.price).toLocaleString('ru-RU'))+' ₽ · КП № '+esc(c.number)+'</option>').join('')+'</select></label>':'';
-    const feedback=request()?.status==='think'?'<form class="domain-box" id="wf-feedback"><h3>Реакция клиента на КП</h3><label class="field">Итог<select data-wf="outcome">'+
+    const unlinked=request()?.status==='won'&&!request()?.archived_at&&!chosen&&sentCars.length;
+    const feedback=unlinked?'<form class="domain-box" id="wf-link-car">'+carPicker+'<button class="btn small">Записать выбранную машину</button></form>':request()?.status==='think'?'<form class="domain-box" id="wf-feedback"><h3>Реакция клиента на КП</h3><label class="field">Итог<select data-wf="outcome">'+
       [['think','Продолжает выбирать'],['won','Заказ оформлен'],['lost','Отказ'],['no_answer','Не дозвонились']].map(([key,title])=>'<option value="'+key+'" '+((v.outcome||'think')===key?'selected':'')+'>'+title+'</option>').join('')+
       '</select></label>'+(v.outcome==='won'?carPicker:'')+input('note','Комментарий, при отказе укажите причину',v.note)+input('next','Следующий контакт',v.next,'datetime-local')+'<button class="btn small">Записать результат</button></form>':'';
     const sourcePanel='<details class="domain-box"><summary>МойСклад, Авто.ру и Авито</summary>'+sources+(writable?action('retry','Обновить поиск')+
-      '<div class="row wrap"><a class="btn small ghost" target="_blank" rel="noreferrer" href="https://auto.ru/cars/all/">Открыть Авто.ру</a><a class="btn small ghost" target="_blank" rel="noreferrer" href="https://www.avito.ru/rossiya/avtomobili?q='+encodeURIComponent(request()?.model||'')+'">Найти на Авито</a></div><form id="wf-listing"><h4>Добавить объявление по ссылке</h4>'+input('listingUrl','Ссылка на объявление',v.listingUrl,'url','required')+input('listingTitle','Автомобиль',v.listingTitle,'text','required')+input('listingPrice','Цена объявления, ₽',v.listingPrice,'number','min="1"')+'<button class="btn small">Сохранить объявление</button></form>':'')+'</details>';
+      '<div class="row wrap"><a class="btn small ghost" target="_blank" rel="noreferrer" href="https://auto.ru/cars/all/">Открыть Авто.ру</a><a class="btn small ghost" target="_blank" rel="noreferrer" href="https://www.avito.ru/rossiya/avtomobili?q='+encodeURIComponent(request()?.model||'')+'">Найти на Авито</a></div><form id="wf-listing"><h4>Добавить объявление по ссылке</h4>'+input('listingUrl','Ссылка на объявление',v.listingUrl,'url','required')+input('listingTitle','Автомобиль',v.listingTitle,'text','required')+input('listingPrice','Цена объявления, ₽',v.listingPrice,'number','min="1"')+listingFields(v)+'<button class="btn small">Сохранить объявление</button></form>':'')+'</details>';
     const answered=threads.filter(t=>t.messages?.some(m=>m.incoming)).length;
-    return selection+feedback+sourcePanel+'<section class="wf-inbox"><div class="row between"><h3>Ответили '+answered+' из '+threads.length+'</h3>'+action('refresh','Обновить ответы')+'</div>'+alert+(writable?search:'')+
+    return orderHtml(inbox.order)+selection+feedback+(inbox.manager_flow?window.PodborLots.comparison(request()||{},inbox,domain().options()):'')+sourcePanel+(inbox.manager_flow?window.PodborLots.callQueue(inbox.listings,writable):'')+'<section class="wf-inbox"><div class="row between"><h3>Ответили '+answered+' из '+threads.length+'</h3>'+action('refresh','Обновить ответы')+'</div>'+alert+(writable?search:'')+
       (threads.length?'<label class="field">Диалог<select data-wf="thread">'+threads.map(t=>'<option value="'+esc(t.id)+'" '+(t.id===thread?'selected':'')+'>'+esc(t.name)+' · '+esc(t.code)+'</option>').join('')+'</select></label>':'<p class="footnote">Диалогов пока нет. Проверьте марку и включённые профили поставщиков.</p>')+
       (t?'<p class="footnote">Первый запрос · '+esc(states[t.delivery]||'Подготовлен')+'</p><ol class="wf-log">'+messages+'</ol>'+(writable?'<form id="wf-reply"><label class="field">Ответ через бота<textarea data-wf="reply" required maxlength="2500" placeholder="Уточните состояние, цену или срок">'+esc(v.reply||'')+'</textarea></label><button class="btn small">Отправить поставщику</button></form>':''):'')+
       '</section>';
@@ -81,7 +97,7 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     const f=m.parsed||{},terms=t.terms||{},currency=f.currency||terms.currency||'RUB';
     const photos=[...new Set([...(m.photos||[]),...t.messages.filter(x=>x.incoming&&!x.option_id&&!x.text).flatMap(x=>x.photos||[])])];
     return {message_id:m.id,terms_revision:terms.revision||0,title:f.model||'',description:[f.years,f.mileage!=null?f.mileage+' км':'',f.spec].filter(Boolean).join(', '),
-      purchase:f.purchase||'',term:f.term||'',currency,scenario:currency==='RUB'?'rf':'import',base_rate:currency==='RUB'?1:'',...terms.fees,photos:[],candidates:photos,source_name:'Запрос '+t.code};
+      purchase:f.purchase||'',term:f.term||'',currency,scenario:currency==='RUB'?'rf':'import',base_rate:currency==='RUB'?1:'',...(f.quote_mode==='turnkey'?{}:terms.fees),...Object.fromEntries(Object.keys(fees).filter(k=>f[k]!=null).map(k=>[k,f[k]])),quote_mode:f.quote_mode||'itemized',vehicle:{year:f.years,mileage:f.mileage,generation:f.generation,color:f.color,trim:f.trim},photos:[],candidates:photos,source_name:'Запрос '+t.code};
   }
   async function run(fn){
     if(busy||isBusy()||domain().isBusy())return;
@@ -117,13 +133,18 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
       if(act==='use'){const t=inbox.threads.find(t=>t.id===thread);const m=t?.messages.find(m=>m.id===val);if(m)draft=draftFrom(t,m);}
       if(act==='source'){
         const [name,index]=val.split(':');const row=name==='manual'?inbox.listings?.[index]:inbox.sources.find(s=>s.source===name)?.results[index];
-        if(row)draft={title:row.title,purchase:row.purchase||'',term:row.term,currency:row.currency,scenario:row.currency==='RUB'?'rf':'import',base_rate:row.currency==='RUB'?1:'',source_name:name==='stock'?'МойСклад':String(row.link||'Объявление').slice(0,200),client_price:''};
+        if(row)draft={title:row.title,quote_mode:row.quote_mode||'itemized',vehicle:{...row.vehicle,listing_url:row.link||undefined},purchase:row.calls?.find(c=>c.actual_price!=null)?.actual_price??row.purchase??'',term:row.term,currency:row.currency,scenario:row.currency==='RUB'?'rf':'import',base_rate:row.currency==='RUB'?1:'',source_name:name==='stock'?'МойСклад':String(row.link||'Объявление').slice(0,200),client_price:''};
       }
       if(draft&&domain().startDraft(draft))requestAnimationFrame(()=>document.querySelector('#domainOptionForm')?.scrollIntoView({block:'start'}));
     });
   });
   root.addEventListener('submit',event=>{
-    const form=event.target;if(!form.id.startsWith('wf-'))return;event.preventDefault();
+    const form=event.target;if(form.matches('[data-lot-call]')){
+      event.preventDefault();if(busy||isBusy())return;
+      const button=form.querySelector('button[type="submit"]');button.disabled=true;busy=true;
+      (async()=>{try{if(await window.PodborLots.saveCall(form,inbox.listings,id,api)){await refresh();render();flash('Звонок сохранён');}}
+        catch(e){flash(formatError(e));}finally{busy=false;button.disabled=false;}})();return;
+    }if(!form.id.startsWith('wf-'))return;event.preventDefault();
     run(async()=>{
       if(form.id==='wf-policy'){
         const p=policyDraft;if(+p.escalation_hours<+p.supplier_hours){flash('Срок уведомления менеджера должен быть не меньше срока поставщика');return;}
@@ -135,11 +156,15 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
         await networkLoad();flash('Тариф сохранён');return;
       }
       if(form.id==='wf-listing'){
-        await op('listing.save',{request_id:id,url:formValues.listingUrl,title:formValues.listingTitle,purchase:formValues.listingPrice||null});
+        const v=formValues,phone=(v.listingPhone||'').replace(/[^\d+]/g,'').replace(/^8(?=\d{10}$)/,'+7');
+        if(phone&&!/^\+?\d{10,15}$/.test(phone)){flash('Проверьте телефон продавца');return;}
+        const vehicle=Object.fromEntries(Object.keys(window.PodborLots.attrs).filter(k=>v['listing_'+k]).map(k=>[k,v['listing_'+k]]));
+        await op('listing.save',{request_id:id,url:v.listingUrl,title:v.listingTitle,purchase:v.listingPrice||null,phone,vehicle,quote_mode:v.listingMode||'itemized'});
+        Object.keys(v).filter(k=>k.startsWith('listing')).forEach(k=>delete v[k]);
         delete formValues.listingUrl;delete formValues.listingTitle;delete formValues.listingPrice;flash('Объявление сохранено');
       }
-      if(form.id==='wf-feedback'){
-        const d=request(), outcome=formValues.outcome||'think', note=String(formValues.note||'').trim();
+      if(form.id==='wf-feedback'||form.id==='wf-link-car'){
+        const d=request(), outcome=form.id==='wf-link-car'?'won':formValues.outcome||'think', note=String(formValues.note||'').trim();
         if(outcome==='lost'&&!note){flash('Укажите причину отказа');return;}
         if(outcome==='no_answer'&&!formValues.next){flash('Укажите время следующего звонка');return;}
         const next=['no_answer','think'].includes(outcome)&&formValues.next?new Date(formValues.next).toISOString():null;
@@ -173,5 +198,5 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     }
     return d;
   }
-  return {reset,load,networkLoad,networkHtml,inboxHtml,photoPicker,existingPhotos,dirty:()=>edited,busy:()=>busy};
+  return {extended:()=>!!inbox?.manager_flow,reset,load,networkLoad,networkHtml,inboxHtml,photoPicker,existingPhotos,dirty:()=>edited,busy:()=>busy};
 };

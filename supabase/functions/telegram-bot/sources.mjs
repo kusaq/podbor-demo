@@ -21,7 +21,12 @@ export async function searchSource(job, accounts, fetcher=fetch) {
     if (!row || typeof row.name!=='string' || !row.name.trim() || (stock && !(row.stock-row.reserve>0))) continue;
     const purchase=stock?Number(row.price)/100:Number(row.price);
     if (!stock && !['RUB','CNY','JPY','USD','EUR'].includes(row.currency||'RUB')) continue;
-    results.push({title:row.name.slice(0,200),purchase:Number.isFinite(purchase)&&purchase>0?purchase:null,currency:stock?'RUB':String(row.currency||'RUB'),term:stock?'В наличии':String(row.term||'').slice(0,180),link:!stock&&/^https:\/\//i.test(row.url||'')?String(row.url).slice(0,1000):null});
+    const vehicle={};
+    for(const k of ['generation','year','mileage','color','trim']){
+      const v=row[k];if((typeof v==='string'||typeof v==='number')&&String(v).length<=80&&String(v).trim())vehicle[k]=v;
+    }
+    const phone=String(row.phone||'').replace(/[ ()-]/g,'');
+    results.push({...(Object.keys(vehicle).length?{vehicle}:{}),...(/^\+?\d{10,15}$/.test(phone)?{phone}:{}),...(row.quote_mode==='turnkey'?{quote_mode:'turnkey'}:{}),title:row.name.slice(0,200),purchase:Number.isFinite(purchase)&&purchase>0?purchase:null,currency:stock?'RUB':String(row.currency||'RUB'),term:stock?'В наличии':String(row.term||'').slice(0,180),link:!stock&&/^https:\/\//i.test(row.url||'')?String(row.url).slice(0,1000):null});
     if (results.length===100) break;
   }
   return {state:'ready',results};

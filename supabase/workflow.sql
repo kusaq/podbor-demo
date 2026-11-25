@@ -43,6 +43,32 @@ create table if not exists public.request_listings (
 alter table public.request_listings enable row level security;
 revoke all on public.request_listings from public,anon,authenticated;
 grant select,insert,update on public.request_listings to service_role;
+alter table public.workflow_policy add column if not exists year_slack integer not null default 0 check(year_slack between 0 and 10);
+alter table public.workflow_policy add column if not exists km_slack integer not null default 0 check(km_slack between 0 and 1000000);
+alter table public.workflow_policy add column if not exists budget_pct numeric not null default 0 check(budget_pct between 0 and 100);
+alter table public.request_listings add column if not exists currency text not null default 'RUB' check(currency in ('RUB','CNY','JPY','USD','EUR'));
+alter table public.request_listings add column if not exists phone text not null default '' check(phone='' or phone ~ '^[+]?[0-9]{10,15}$');
+alter table public.request_listings add column if not exists vehicle jsonb not null default '{}';
+alter table public.request_listings add column if not exists quote_mode text not null default 'itemized' check(quote_mode in ('itemized','turnkey'));
+create table if not exists public.listing_calls (
+ id uuid primary key, request_id uuid not null, url text not null,
+ actor_id bigint not null references public.app_users(tg_id) on update cascade,
+ result text not null check(result in ('fit','reject','retry')), check(result<>'retry' or next_call is not null), actual_price numeric check(actual_price>0 and actual_price<=100000000000),
+ note text not null default '' check(length(note)<=1600), next_call timestamptz, created_at timestamptz not null default clock_timestamp(),
+ foreign key(request_id,url) references public.request_listings(request_id,url)
+);
+create index if not exists listing_calls_latest on public.listing_calls(request_id,url,created_at desc);
+create index if not exists listing_calls_due on public.listing_calls(next_call) where result='retry';
+create table if not exists public.crm_orders (
+ id uuid primary key default gen_random_uuid(), request_id uuid unique not null references public.crm_requests(id),
+ snapshot jsonb not null, created_at timestamptz not null default now()
+);
+alter table public.listing_calls enable row level security;
+alter table public.crm_orders enable row level security;
+revoke all on public.listing_calls,public.crm_orders from public,anon,authenticated;
+grant select,insert on public.listing_calls to service_role;
+grant select,insert,update on public.crm_orders to service_role;
+
 create table if not exists public.search_sources (
  request_id uuid not null references public.crm_requests(id), source text not null check(source in ('stock','market')),
  state text not null default 'pending' check(state in ('pending','running','ready','unconfigured','failed')),
@@ -57,6 +83,81 @@ alter table public.supplier_photos enable row level security;
 alter table public.search_sources enable row level security;
 revoke all on public.supplier_terms,public.workflow_policy,public.workflow_creates,public.supplier_photos,public.search_sources from public,anon,authenticated;
 grant select,insert,update on public.supplier_terms,public.workflow_policy,public.workflow_creates,public.supplier_photos,public.search_sources to service_role;
+
+create or replace function public.workflow_market_calls() returns trigger
+language plpgsql security invoker set search_path=public,pg_temp as $$
+begin
+ insert into request_listings(request_id,url,title,purchase,currency,term,vehicle,phone,quote_mode)
+ select distinct on (v->>'link') new.request_id,v->>'link',v->>'title',(v->>'purchase')::numeric,coalesce(v->>'currency','RUB'),
+  coalesce(v->>'term',''),coalesce(v->'vehicle','{}'),coalesce(v->>'phone',''),coalesce(v->>'quote_mode','itemized')
+ from jsonb_array_elements(new.results) v where v->>'link' ~ '^https://[^[:space:]]+$'
+ on conflict(request_id,url) do nothing;
+ return new;
+end $$;
+create or replace trigger workflow_market_calls after insert or update of results on public.search_sources
+ for each row when (new.source='market' and new.state='ready') execute function public.workflow_market_calls();
+-- Materialize previously received listings when installing on an existing dealer.
+update public.search_sources s set results=s.results where s.source='market' and s.state='ready' and exists(
+ select 1 from jsonb_array_elements(s.results) v where v->>'link' ~ '^https://[^[:space:]]+$'
+ and not exists(select 1 from public.request_listings l where l.request_id=s.request_id and l.url=v->>'link'));
+revoke all on function public.workflow_market_calls() from public,anon,authenticated;
+grant execute on function public.workflow_market_calls() to service_role;
+
+alter table public.request_offers add column if not exists internal_quotes jsonb not null default '{}';
+create or replace function public.workflow_snapshot_quotes() returns trigger
+language plpgsql security invoker set search_path=public,pg_temp as $$
+begin
+ select coalesce(jsonb_object_agg(o.id,jsonb_build_object('source',o.source_name,'currency',o.currency,
+  'cost',o.total_cost,'quote',o.input,'calculation',o.calculation)),'{}') into new.internal_quotes
+ from request_options o where o.request_id=new.request_id and o.id=any(new.option_ids);
+ return new;
+end $$;
+create or replace trigger workflow_snapshot_quotes before insert on public.request_offers for each row execute function public.workflow_snapshot_quotes();
+revoke all on function public.workflow_snapshot_quotes() from public,anon,authenticated;
+grant execute on function public.workflow_snapshot_quotes() to service_role;
+create or replace function public.workflow_record_order() returns trigger
+language plpgsql security invoker set search_path=public,pg_temp as $$
+begin
+ insert into crm_orders(request_id,snapshot,created_at)
+ select r.id,jsonb_build_object('client',r.client_name,'phone',r.phone,'city',r.city,'manager',u.name,'choice',new.data->'choice',
+  'car',car)||coalesce(f.internal_quotes->(new.data->'choice'->>'option'),'{}'::jsonb),new.created_at
+ from crm_requests r left join app_users u on u.tg_id=r.assigned_to
+ join request_offers f on f.id=(new.data->'choice'->>'offer')::uuid and f.request_id=r.id
+ cross join lateral generate_subscripts(f.option_ids,1) n
+ cross join lateral (select f.model->'cars'->(n-1) as car) snap
+ join request_options o on o.id=f.option_ids[n] and o.request_id=r.id
+ where r.id=new.request_id and o.id=(new.data->'choice'->>'option')::uuid
+ on conflict(request_id) do update set snapshot=excluded.snapshot where not (crm_orders.snapshot?'choice');
+ if not exists(select 1 from crm_orders where request_id=new.request_id) then raise exception 'crm_conflict'; end if;
+ return new;
+end $$;
+create or replace trigger workflow_record_order after insert on public.crm_activity for each row when(new.kind='car.chosen') execute function public.workflow_record_order();
+revoke all on function public.workflow_record_order() from public,anon,authenticated;
+grant execute on function public.workflow_record_order() to service_role;
+-- Reconstruct historical choices only from their immutable, sent offer.
+insert into public.crm_orders(request_id,snapshot,created_at)
+select distinct on (r.id) r.id,jsonb_build_object('client',f.model->>'client','choice',a.data->'choice','car',f.model->'cars'->(n-1)),a.created_at
+from public.crm_activity a join public.crm_requests r on r.id=a.request_id
+join public.request_offers f on f.id=(a.data->'choice'->>'offer')::uuid and f.request_id=r.id
+cross join lateral generate_subscripts(f.option_ids,1) n where a.kind='car.chosen' and f.option_ids[n]::text=a.data->'choice'->>'option'
+order by r.id,a.created_at desc on conflict(request_id) do nothing;
+
+-- Requests closed directly from a client card still need an order and an explicit vehicle choice.
+create or replace function public.workflow_open_order() returns trigger
+language plpgsql security invoker set search_path=public,pg_temp as $$
+begin
+ insert into crm_orders(request_id,snapshot) values(new.id,jsonb_build_object('client',new.client_name,'phone',new.phone,'city',new.city,
+  'manager',(select name from app_users where tg_id=new.assigned_to))) on conflict(request_id) do nothing;
+ return new;
+end $$;
+create or replace trigger workflow_open_order after insert or update of status on public.crm_requests
+ for each row when(new.status='won') execute function public.workflow_open_order();
+revoke all on function public.workflow_open_order() from public,anon,authenticated;
+grant execute on function public.workflow_open_order() to service_role;
+insert into public.crm_orders(request_id,snapshot,created_at)
+ select r.id,jsonb_build_object('client',r.client_name,'phone',r.phone,'city',r.city,'manager',u.name),coalesce(
+ (select max(c.created_at) from public.crm_activity c where c.request_id=r.id and c.data->>'status'='won'),r.updated_at)
+ from public.crm_requests r left join public.app_users u on u.tg_id=r.assigned_to where r.status='won' on conflict(request_id) do nothing;
 
 create or replace function public.workflow_start_sources() returns trigger
 language plpgsql security invoker set search_path=public,pg_temp as $$
@@ -97,7 +198,7 @@ begin
    'Поколение: '||coalesce(nullif(r.generation,''),'не указано'),'Годы: '||coalesce(nullif(r.years,''),'не указаны'),
    'Пробег до, км: '||coalesce(r.mileage::text,'не указан'),'Цвет: '||coalesce(nullif(p_color,''),'не указан'),
    'Комплектация: '||coalesce(nullif(p_trim,''),'не указана'),
-   'Ответьте на это сообщение. Укажите модель, год, пробег, цену, валюту и срок. Фото одной машины можно отправить альбомом.');
+   'Ответьте на это сообщение. Укажите модель, год, пробег, цену, валюту и срок. Запросите или укажите свой расчёт по строкам: «Цена: 1800000 JPY» и «Доставка: 80000 RUB» либо «Под ключ: 2400000 RUB». Фото одной машины можно отправить альбомом.');
   insert into bot_messages(thread_id,actor_id,sanitized_text) values(t.id,p_actor,body) returning id into mid;
   insert into bot_outbox(chat_id,actor_id,thread_id,message_id,dedupe_key,body) values(supplier,p_actor,t.id,mid,'dispatch:'||t.id,
    jsonb_build_object('text',body,'reply_markup',jsonb_build_object('inline_keyboard',jsonb_build_array(jsonb_build_array(jsonb_build_object('text','Открыть диалог','callback_data','thread:'||t.id))))));
@@ -172,7 +273,7 @@ begin
  if p_action in ('network','terms.save','policy.save') then
   if a.role='manager' then raise exception 'crm_forbidden'; end if;
   if p_action='network' then
-   return jsonb_build_object('suppliers',coalesce((select jsonb_agg(x order by x.name) from (
+   return jsonb_build_object('schema_version',2,'suppliers',coalesce((select jsonb_agg(x order by x.name) from (
     select case when u1.company_id=a.company_id then u1.tg_id::text else md5(a.company_id::text||':'||u1.tg_id) end as id, case when u1.company_id=a.company_id then u1.name else 'Поставщик '||right(md5(u1.tg_id::text),6) end as name,
      u1.company_id=a.company_id as owned, p1.brands,coalesce(p1.active,false) as enabled,u1.active,
      coalesce(s.revision,0) as revision,coalesce(s.currency,'RUB') as currency,coalesce(s.fees,'{}') as fees
@@ -186,8 +287,9 @@ begin
   if p_action='policy.save' then
    select * into pol from workflow_policy where company_id=a.company_id;
    if coalesce(pol.revision,0) is distinct from (p->>'revision')::int then raise exception 'crm_conflict'; end if;
-   insert into workflow_policy values(a.company_id,coalesce(pol.revision,0)+1,(p->>'supplier_hours')::int,(p->>'escalation_hours')::int,(p->>'client_days')::int)
-    on conflict(company_id) do update set revision=excluded.revision,supplier_hours=excluded.supplier_hours,escalation_hours=excluded.escalation_hours,client_days=excluded.client_days;
+   insert into workflow_policy values(a.company_id,coalesce(pol.revision,0)+1,(p->>'supplier_hours')::int,(p->>'escalation_hours')::int,(p->>'client_days')::int,
+    coalesce((p->>'year_slack')::integer,pol.year_slack,0),coalesce((p->>'km_slack')::integer,pol.km_slack,0),coalesce((p->>'budget_pct')::numeric,pol.budget_pct,0))
+    on conflict(company_id) do update set revision=excluded.revision,supplier_hours=excluded.supplier_hours,escalation_hours=excluded.escalation_hours,client_days=excluded.client_days,year_slack=excluded.year_slack,km_slack=excluded.km_slack,budget_pct=excluded.budget_pct;
    return '{"ok":true}';
   end if;
   select * into u from app_users where (case when company_id=a.company_id then tg_id::text else md5(a.company_id::text||':'||tg_id) end)=p->>'id' and role='supplier' and
@@ -214,11 +316,16 @@ begin
  select * into strict r from crm_requests where id=(p->>'request_id')::uuid for update;
  if p_action='inbox' then
   return jsonb_build_object(
+   'tolerances',(select jsonb_build_object('years',year_slack,'km',km_slack,'pct',budget_pct) from workflow_policy where company_id=r.company_id),
    'sent_cars',coalesce((select jsonb_agg(jsonb_build_object('offer',f.id,'number',f.number,'option',f.option_ids[n],'title',f.model->'cars'->(n-1)->>'title','price',f.model->'cars'->(n-1)->'price') order by f.number desc,n)
      from request_offers f cross join lateral generate_subscripts(f.option_ids,1) n where f.request_id=r.id and f.sent_at is not null),'[]'),
    'choice',(select data->'choice' from crm_activity where request_id=r.id and kind='car.chosen' order by created_at desc,id desc limit 1),
    'spec',(select to_jsonb(b)-'company_id' from bot_request_specs b where b.request_id=r.id),
-   'listings',coalesce((select jsonb_agg(jsonb_build_object('title',l.title,'purchase',l.purchase,'currency','RUB','term',l.term,'link',l.url) order by l.title) from request_listings l where l.request_id=r.id),'[]'),
+   'order',(select to_jsonb(o)-'request_id' from crm_orders o where o.request_id=r.id),
+   'listings',coalesce((select jsonb_agg((to_jsonb(l)-'request_id'-'url')||jsonb_build_object('link',l.url,'calls',
+    coalesce((select jsonb_agg((to_jsonb(c)-'request_id'-'url'-'actor_id')||jsonb_build_object('actor',au.name) order by c.created_at desc,c.id)
+    from listing_calls c left join app_users au on au.tg_id=c.actor_id where c.request_id=l.request_id and c.url=l.url),'[]'::jsonb)) order by l.title,l.url)
+    from request_listings l where l.request_id=r.id),'[]'),
    'sources',coalesce((select jsonb_agg(to_jsonb(s)-'request_id') from search_sources s where s.request_id=r.id),'[]'),
    'threads',coalesce((select jsonb_agg(jsonb_build_object('id',th.id,'code',th.code,
     'name',case when su.company_id=a.company_id then su.name else 'Поставщик '||right(md5(su.tg_id::text),6) end,
@@ -240,7 +347,8 @@ begin
   select data->'choice' into previous_choice from crm_activity where request_id=r.id and actor_id=p_actor and kind='car.chosen' and data->>'token'=p->>'token';
   if found then
    if previous_choice is distinct from result then raise exception 'crm_conflict'; end if;
-  elsif r.status<>'think' then raise exception 'backend_closed'; end if;
+  elsif r.archived_at is not null or (r.status<>'think' and not (r.status='won' and exists(
+    select 1 from crm_orders where request_id=r.id and not(snapshot?'choice')))) or exists(select 1 from crm_orders where request_id=r.id and snapshot?'choice') then raise exception 'backend_closed'; end if;
   perform crm_log_contact(p_actor,r.id,(p->>'version')::integer,(p->>'token')::uuid,'connected',coalesce(p->>'note',''),'{"status":"won","next_contact_at":null}');
   if previous_choice is null then
    insert into crm_activity(company_id,request_id,actor_id,kind,data) values(r.company_id,r.id,p_actor,'car.chosen',jsonb_build_object('token',p->>'token','choice',result));
@@ -256,8 +364,26 @@ begin
  if r.archived_at is not null or r.status not in ('search','think') then raise exception 'backend_closed'; end if;
  if p_action='dispatch' then return jsonb_build_object('queued',workflow_dispatch(p_actor,r.id,p->>'brand',coalesce(p->>'color',''),coalesce(p->>'trim',''))); end if;
  if p_action='listing.save' then
-  insert into request_listings values(r.id,p->>'url',trim(p->>'title'),nullif(p->>'purchase','')::numeric,coalesce(p->>'term',''))
-   on conflict(request_id,url) do update set title=excluded.title,purchase=excluded.purchase,term=excluded.term;
+  insert into request_listings(request_id,url,title,purchase,term,currency,vehicle,phone,quote_mode)
+   values(r.id,p->>'url',trim(p->>'title'),nullif(p->>'purchase','')::numeric,coalesce(p->>'term',''),
+    coalesce(p->>'currency','RUB'),coalesce(p->'vehicle','{}'),coalesce(p->>'phone',''),coalesce(p->>'quote_mode','itemized'))
+   on conflict(request_id,url) do update set title=excluded.title,purchase=excluded.purchase,term=excluded.term,currency=excluded.currency,
+    vehicle=case when p?'vehicle' then excluded.vehicle else request_listings.vehicle end,
+    phone=case when p?'phone' then excluded.phone else request_listings.phone end,quote_mode=case when p?'quote_mode' then excluded.quote_mode else request_listings.quote_mode end;
+  return '{"ok":true}';
+ end if;
+ if p_action='listing.call' then
+  select to_jsonb(c) into result from listing_calls c where c.id=(p->>'token')::uuid;
+  if found then
+   if result->>'request_id'<>r.id::text or result->>'url'<>p->>'url' or result->>'actor_id'<>p_actor::text
+    or result->>'result' is distinct from p->>'result' or result->>'note' is distinct from coalesce(p->>'note','')
+    or (result->>'actual_price')::numeric is distinct from nullif(p->>'actual_price','')::numeric
+    or (result->>'next_call')::timestamptz is distinct from nullif(p->>'next_call','')::timestamptz then raise exception 'crm_conflict'; end if;
+   return '{"ok":true}';
+  end if;
+  if (select id::text from listing_calls where request_id=r.id and url=p->>'url' order by created_at desc,id limit 1) is distinct from p->>'previous' then raise exception 'crm_conflict'; end if;
+  insert into listing_calls(id,request_id,url,actor_id,result,actual_price,note,next_call)
+  values((p->>'token')::uuid,r.id,p->>'url',p_actor,p->>'result',nullif(p->>'actual_price','')::numeric,coalesce(p->>'note',''),nullif(p->>'next_call','')::timestamptz);
   return '{"ok":true}';
  end if;
  if p_action='search.retry' then
@@ -355,7 +481,14 @@ create or replace view public.workflow_due with (security_invoker=true) as
   'Что ответил клиент по КП №'||f.number||' ('||r.model||')? Запишите результат в карточке клиента и обновите статус.'
  from crm_requests r cross join lateral (select o.id,o.number,o.sent_at from request_offers o where o.request_id=r.id and o.sent_at is not null order by o.sent_at desc,o.number desc limit 1) f
  where r.archived_at is null and r.status='think' and r.assigned_to is not null and r.next_contact_at<=now()
- and not exists(select 1 from crm_activity c where c.request_id=r.id and c.kind='contact' and c.data->>'result'='connected' and c.created_at>f.sent_at and (c.data->'submitted_data'->>'next_contact_at' is null or r.next_contact_at<=c.created_at));
+ and not exists(select 1 from crm_activity c where c.request_id=r.id and c.kind='contact' and c.data->>'result'='connected' and c.created_at>f.sent_at and (c.data->'submitted_data'->>'next_contact_at' is null or r.next_contact_at<=c.created_at))
+ union all
+ select 'listing:'||c.id||':'||r.assigned_to,'listing',r.assigned_to,r.assigned_to,null::uuid,r.id,r.company_id,
+  'Пора перезвонить продавцу: '||l.title||'. Откройте обзвон заявки '||r.model||'.'
+ from listing_calls c join request_listings l on (l.request_id,l.url)=(c.request_id,c.url)
+ join crm_requests r on r.id=c.request_id join app_users u on u.tg_id=r.assigned_to and u.active
+ where r.archived_at is null and r.status in ('search','think') and c.next_call<=now() and c.result='retry'
+ and c.id=(select last.id from listing_calls last where last.request_id=c.request_id and last.url=c.url order by last.created_at desc,last.id limit 1);
 revoke all on public.workflow_due from public,anon,authenticated;
 grant select on public.workflow_due to service_role;
 create or replace function public.workflow_queue_due() returns void language sql security invoker set search_path=public,pg_temp as $$

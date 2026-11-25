@@ -143,6 +143,7 @@ begin
   elsif (select count(*) from public.request_options where request_id=r.id)>=100 then raise exception 'backend_limit'; end if;
   if coalesce(p->>'scenario','') not in ('rf','import') or length(coalesce(trim(p->>'title'),'')) not between 1 and 200 then raise exception 'backend_bad_data'; end if;
   inp:=p->'input'; if jsonb_typeof(inp)<>'object' then raise exception 'backend_bad_data'; end if;
+  if coalesce(inp->>'quote_mode','itemized') not in ('itemized','turnkey') or jsonb_typeof(coalesce(inp->'vehicle','{}'))<>'object' or length(coalesce(inp->'vehicle','{}')::text)>1600 then raise exception 'backend_bad_data'; end if;
   foreach item in array array['purchase','logistics','duty','recycling','documents','commission'] loop n:=coalesce((inp->>item)::numeric,0); if n<0 or n>100000000000 or n='NaN'::numeric then raise exception 'backend_bad_data'; end if; end loop;
   purchase:=(inp->>'purchase')::numeric; if purchase is null or purchase<=0 then raise exception 'backend_bad_data'; end if;
   if p->>'scenario'='import' then
@@ -153,6 +154,7 @@ begin
   else rate:=1; end if;
   purchase:=round(purchase*rate,2);
   cost:=round(purchase+coalesce((inp->>'logistics')::numeric,0)+coalesce((inp->>'commission')::numeric,0)+case when p->>'scenario'='import' then coalesce((inp->>'duty')::numeric,0)+coalesce((inp->>'recycling')::numeric,0)+coalesce((inp->>'documents')::numeric,0) else 0 end,2);
+  if inp->>'quote_mode'='turnkey' then cost:=purchase; end if;
   price:=(p->>'client_price')::numeric; median:=nullif(p->>'market_median','')::numeric;
   if price is null or price<cost or price>100000000000 or price='NaN'::numeric then raise exception 'backend_price_below_cost'; end if;
   if median is not null and (median<=0 or median>100000000000 or median='NaN'::numeric) then raise exception 'backend_bad_data'; end if;
