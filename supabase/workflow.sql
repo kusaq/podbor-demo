@@ -253,15 +253,15 @@ begin
   on conflict(request_id,supplier_id) do nothing returning * into t;
   if not found then continue; end if;
   body:=concat_ws(E'\n','Запрос № '||t.code,'Марка: '||brand,'Модель: '||r.model,
-   'Поколение: '||coalesce(nullif(r.generation,''),'не указано'),'Годы: '||coalesce(nullif(r.years,''),'не указаны'),
-   'Пробег до, км: '||coalesce(r.mileage::text,'не указан'),'Цвет: '||coalesce(nullif(filter_data->>'color',''),nullif(p_color,''),'не указан'),
-   'Комплектация: '||coalesce(nullif(p_trim,''),'не указана'),
+   'Поколение: '||nullif(r.generation,''),'Годы: '||nullif(r.years,''),
+   'Пробег до, км: '||case when filter_data->>'mileage_to' is null then r.mileage::text end,'Цвет: '||coalesce(nullif(filter_data->>'color',''),nullif(p_color,'')),
+   'Комплектация: '||nullif(p_trim,''),
    'Кузов: '||(filter_data->>'body'),'Коробка: '||(filter_data->>'gearbox'),'Топливо: '||(filter_data->>'fuel'),'Привод: '||(filter_data->>'drive'),
    'Год от: '||(filter_data->>'year_from'),'Год до: '||(filter_data->>'year_to'),'Пробег от, км: '||(filter_data->>'mileage_from'),'Пробег до, км: '||(filter_data->>'mileage_to'),
-   'Ответьте на это сообщение. Укажите модель, год, пробег, цену, валюту и срок. Запросите или укажите свой расчёт по строкам: «Цена: 1800000 JPY» и «Доставка: 80000 RUB» либо «Под ключ: 2400000 RUB». Фото одной машины можно отправить альбомом.');
+   E'\nОтветьте на это сообщение. Укажите машину, цену, валюту и срок. Уточните, входит ли доставка. Фото одной машины можно прислать альбомом.');
   insert into bot_messages(thread_id,actor_id,sanitized_text) values(t.id,p_actor,body) returning id into mid;
   insert into bot_outbox(chat_id,actor_id,thread_id,message_id,dedupe_key,body) values(supplier,p_actor,t.id,mid,'dispatch:'||t.id,
-   jsonb_build_object('text',body,'reply_markup',jsonb_build_object('inline_keyboard',jsonb_build_array(jsonb_build_array(jsonb_build_object('text','Открыть диалог','callback_data','thread:'||t.id))))));
+   jsonb_build_object('text',body,'reply_markup',jsonb_build_object('inline_keyboard',jsonb_build_array(jsonb_build_array(jsonb_build_object('text','Ответить по машине','style','primary','callback_data','thread:'||t.id))))));
   n:=n+1;
  end loop;
  return n;
@@ -335,7 +335,7 @@ begin
  end if;
  select assigned_to into manager from crm_requests where id=t.request_id;
  if manager is not null then
-  insert into bot_outbox(chat_id,actor_id,thread_id,dedupe_key,body) values(manager,p_actor,t.id,'received:'||m.id,
+  insert into bot_outbox(chat_id,actor_id,thread_id,request_id,dedupe_key,body) values(manager,p_actor,t.id,t.request_id,'received:'||m.id,
    jsonb_build_object('text','Ответ поставщика по запросу '||t.code||E'\n'||coalesce(nullif(m.sanitized_text,''),'Получены фотографии. Откройте подбор в CRM.'),
     'reply_markup',jsonb_build_object('inline_keyboard',jsonb_build_array(jsonb_build_array(jsonb_build_object('text','Открыть диалог','callback_data','thread:'||t.id)))))) on conflict(dedupe_key) do nothing;
  end if;
@@ -615,6 +615,12 @@ create or replace view public.workflow_due with (security_invoker=true) as
  from crm_requests r cross join lateral (select o.id,o.number,o.sent_at from request_offers o where o.request_id=r.id and o.sent_at is not null order by o.sent_at desc,o.number desc limit 1) f
  where r.archived_at is null and r.status='think' and r.assigned_to is not null and r.next_contact_at<=now()
  and not exists(select 1 from crm_activity c where c.request_id=r.id and c.kind='contact' and c.data->>'result'='connected' and c.created_at>f.sent_at and (c.data->'submitted_data'->>'next_contact_at' is null or r.next_contact_at<=c.created_at))
+ union all
+ select 'contact:'||r.id||':'||r.assigned_to||':'||extract(epoch from r.next_contact_at),'contact',r.assigned_to,r.assigned_to,null::uuid,r.id,r.company_id,
+  'Пора связаться с клиентом по заявке '||r.model||'.'
+ from crm_requests r where r.archived_at is null and r.status in ('search','think') and r.assigned_to is not null and r.next_contact_at<=now()
+ and not (r.status='think' and exists(select 1 from request_offers f where f.request_id=r.id and f.sent_at is not null))
+ and not exists(select 1 from crm_activity c where c.request_id=r.id and c.kind='contact' and c.created_at>=r.next_contact_at)
  union all
  select 'listing:'||c.id||':'||r.assigned_to,'listing',r.assigned_to,r.assigned_to,null::uuid,r.id,r.company_id,
   'Пора перезвонить продавцу: '||l.title||'. Откройте обзвон заявки '||r.model||'.'

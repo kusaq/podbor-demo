@@ -14,7 +14,7 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     const ticket=++revision;
     if(id!==requestId){inbox=null;thread='';formValues={};tokens={};edited=false;images.clear();}
     id=requestId; error='';
-    try{const data=await op('inbox',{request_id:id});if(ticket===revision){inbox=data;if(!thread)thread=data.threads?.[0]?.id||'';}}
+    try{const data=await op('inbox',{request_id:id});if(ticket===revision){inbox=data;if(!thread){const link=new URLSearchParams(location.search);const wanted=link.get('request')===id&&link.get('thread');thread=wanted?(data.threads?.find(t=>t.id===wanted)?.id||''):(data.threads?.[0]?.id||'');}}}
     catch(e){if(ticket===revision)error=formatError(e);}
   }
   async function networkLoad(){
@@ -86,7 +86,7 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     const answered=threads.filter(t=>t.messages?.some(m=>m.incoming)).length;
     const filterPanel=inbox.lot_media&&writable?'<details class="domain-box"><summary>Фильтры подбора'+(Object.keys(spec.filters||{}).length?' · '+Object.keys(spec.filters).length:'')+'</summary><form id="wf-filters"><div class="lot-filter-fields">'+window.PodborLotTools.inputs(spec.filters)+'</div><button class="btn small" type="submit">Применить фильтры</button></form></details>':'';
     return orderHtml(inbox.order)+selection+feedback+filterPanel+(inbox.manager_flow?window.PodborLots.comparison(request()||{},inbox,domain().options()):'')+sourcePanel+(inbox.manager_flow?window.PodborLots.callQueue(inbox.listings,writable):'')+'<section class="wf-inbox"><div class="row between"><h3>Ответили '+answered+' из '+threads.length+'</h3>'+action('refresh','Обновить ответы')+'</div>'+alert+(writable?search:'')+
-      (threads.length?'<label class="field">Диалог<select data-wf="thread">'+threads.map(t=>'<option value="'+esc(t.id)+'" '+(t.id===thread?'selected':'')+'>'+esc(t.name)+' · '+esc(t.code)+'</option>').join('')+'</select></label>':'<p class="footnote">Диалогов пока нет. Проверьте марку и включённые профили поставщиков.</p>')+
+      (threads.length?'<label class="field">Диалог<select data-wf="thread">'+(!thread?'<option value="">Выберите поставщика</option>':'')+threads.map(t=>'<option value="'+esc(t.id)+'" '+(t.id===thread?'selected':'')+'>'+esc(t.name)+' · '+esc(t.code)+'</option>').join('')+'</select></label>':'<p class="footnote">Диалогов пока нет. Проверьте марку и включённые профили поставщиков.</p>')+
       (t?'<p class="footnote">Первый запрос · '+esc(states[t.delivery]||'Подготовлен')+'</p><ol class="wf-log">'+messages+'</ol>'+(writable?'<form id="wf-reply"><label class="field">Ответ через бота<textarea data-wf="reply" required maxlength="2500" placeholder="Уточните состояние, цену или срок">'+esc(v.reply||'')+'</textarea></label><button class="btn small">Отправить поставщику</button></form>':''):'')+
       '</section>';
   }

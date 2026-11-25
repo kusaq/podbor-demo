@@ -22,10 +22,10 @@ module.exports=async function localBot(db) {
   URL,Request,Response,Blob,FormData,TextEncoder,TextDecoder,AbortSignal,Uint8Array,btoa,fetch:transport});
  async function invoke(path,headers,body){
   const response=await handler(new Request('https://podbor.test/telegram-bot'+path,{method:'POST',headers,body:JSON.stringify(body)}));
-  assert.equal(response.status,200);await Promise.all(pending.splice(0));
+  assert.equal(response.status,200);if(body.callback_query?.id)assert.deepEqual(await response.json(),{method:'answerCallbackQuery',callback_query_id:body.callback_query.id});await Promise.all(pending.splice(0));
  }
  return {messages,drain:()=>invoke('/drain',{'x-worker-secret':env.BOT_WORKER_SECRET},{}),
-  async click(user,data){await invoke('',{'x-telegram-bot-api-secret-token':env.TELEGRAM_WEBHOOK_SECRET},{update_id:++updateId,callback_query:{data,from:{id:user},message:{chat:{type:'private',id:user}}}});},
+  async click(user,data){await invoke('',{'x-telegram-bot-api-secret-token':env.TELEGRAM_WEBHOOK_SECRET},{update_id:++updateId,callback_query:{id:String(updateId),data,from:{id:user},message:{chat:{type:'private',id:user}}}});},
   photo(bytes){photo=bytes;},
   async send(user,content){
    const id=++updateId;

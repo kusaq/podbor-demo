@@ -13,6 +13,7 @@ function ident(value){assert.match(value,/^[a-z_][a-z0-9_]*$/);return value;}
 function rpc(name,data={}) {
   assert.match(name,/^(crm_|workflow_|bot_)\w+$/);
   const args=Object.entries(data).map(([k,v])=>ident(k)+' => '+(v==null?'null':" :'"+k+"'"));
+  if(name==='bot_list_dialogs')return dbRead("select coalesce(jsonb_agg(to_jsonb(j)), '[]') from "+name+"("+args.join(',')+") j;",data);
   if(name==='workflow_claim_sources')return dbRead("select coalesce(jsonb_agg(to_jsonb(j)), '[]') from workflow_claim_sources() j;");
   return dbRead('select to_jsonb('+name+'('+args.join(',')+'));',data);
 }

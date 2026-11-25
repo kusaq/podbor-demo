@@ -47,17 +47,19 @@ begin
    source_text=excluded.source_text,ready=excluded.ready,routing=excluded.routing,updated_at=now();
   msg:=route->>'preview';
   body:=jsonb_build_object('reply_markup',jsonb_build_object('inline_keyboard',jsonb_build_array(
-    (case when (p->>'ready')::boolean then jsonb_build_array(jsonb_build_object('text','Создать заявку','callback_data','leadok:'||rev)) else '[]'::jsonb end)||
-    jsonb_build_array(jsonb_build_object('text','Отменить','callback_data','leadno:'||rev)))));
+    jsonb_build_array(jsonb_build_object('text','Отменить черновик','callback_data','leadno:'||rev)))));
   if (p->>'ready')::boolean then
    msg:=msg||E'\n\nПолучатели по марке: '||jsonb_array_length(selected)||' из '||jsonb_array_length(choices)||
-    case when jsonb_array_length(choices)>0 then '. Нажмите на имя, чтобы изменить выбор.' else '. Заявку можно создать без рассылки.' end;
-   buttons:=body#>'{reply_markup,inline_keyboard}';pg:=(route->>'page')::integer;
+    case when jsonb_array_length(choices)>0 then '. Снимите отметку с тех, кому писать не нужно.' else '. Заявку можно создать без рассылки.' end;
+   buttons:='[]'::jsonb;pg:=(route->>'page')::integer;
    for rec in select value as item,(ord-1)::integer as i from jsonb_array_elements(choices) with ordinality as x(value,ord) where ord between pg*6+1 and pg*6+6 loop
     buttons:=buttons||jsonb_build_array(jsonb_build_array(jsonb_build_object('text',(case when selected ? (rec.item->>'key') then '✓ ' else '○ ' end)||left(rec.item->>'name',48),'callback_data','leadpick:'||rev||':'||rec.i)));
    end loop;
    if pg>0 then buttons:=buttons||jsonb_build_array(jsonb_build_array(jsonb_build_object('text','← Назад','callback_data','leadpage:'||rev||':'||(pg-1))));end if;
    if (pg+1)*6<jsonb_array_length(choices) then buttons:=buttons||jsonb_build_array(jsonb_build_array(jsonb_build_object('text','Дальше →','callback_data','leadpage:'||rev||':'||(pg+1))));end if;
+   buttons:=buttons||jsonb_build_array(jsonb_build_array(jsonb_build_object('text',
+    case when jsonb_array_length(selected)>0 then 'Создать и отправить · '||jsonb_array_length(selected) else 'Создать без рассылки' end,
+    'style','primary','callback_data','leadok:'||rev)))||(body#>'{reply_markup,inline_keyboard}');
    body:=jsonb_set(body,'{reply_markup,inline_keyboard}',buttons);
   end if;
  elsif p_action='confirm' and d.ready then
@@ -69,12 +71,15 @@ begin
    on conflict(user_id) do update set company_id=excluded.company_id,request_id=excluded.request_id,thread_id=null,offer_id=null,dialogue='[]';
   msg:='Заявка создана · '||(f->>'model')||E'\nПоставщиков в рассылке: '||(result->>'queued');
   body:=jsonb_build_object('reply_markup',jsonb_build_object('inline_keyboard',jsonb_build_array(jsonb_build_array(jsonb_build_object(
-   'text','Открыть заявку','web_app',jsonb_build_object('url',(p->>'desk')||'?request='||rid||'&mini=1'))))));
+   'text','Открыть подбор','style','primary','web_app',jsonb_build_object('url',(p->>'desk')||'?request='||rid||'&mini=1'))))));
   delete from bot_intakes where user_id=p_actor;
  elsif p_action='cancel' then
   delete from bot_intakes where user_id=p_actor and company_id=a.company_id;
   msg:='Черновик закрыт.';
  else msg:='Перешлите сообщение клиента, чтобы начать новую заявку.';
+ end if;
+ if body is null then
+  body:=jsonb_build_object('reply_markup',jsonb_build_object('inline_keyboard',jsonb_build_array(jsonb_build_array(jsonb_build_object('text','В меню','callback_data','nav:home')))));
  end if;
  insert into bot_outbox(chat_id,actor_id,scope_company_id,request_id,dedupe_key,body)
  values(p_actor,p_actor,a.company_id,rid,'intake:'||p_job,coalesce(body,'{}')||jsonb_build_object('text',msg));

@@ -160,3 +160,24 @@ begin
 end $$;
 revoke all on function public.bot_claim_job(),public.bot_thread_access(bigint,uuid),public.bot_confirm(bigint,uuid,boolean) from public,anon,authenticated;
 grant execute on function public.bot_claim_job(),public.bot_thread_access(bigint,uuid),public.bot_confirm(bigint,uuid,boolean) to service_role;
+
+-- Page dialogs after applying the same role scope as the request card.
+create or replace function public.bot_list_dialogs(p_actor bigint,p_page integer default 0)
+returns table(id uuid, model text, label text)
+language sql stable security invoker set search_path=public,pg_temp as $$
+ select t.id,r.model,
+   case when a.role='supplier' then '№ '||right(t.code,6)
+        when s.company_id=a.company_id then s.name
+        else 'Поставщик '||right(t.code,6) end
+ from app_users a join bot_threads t on
+   (a.role='supplier' and t.supplier_id=a.tg_id) or
+   (a.role in ('owner','admin','manager') and t.company_id=a.company_id)
+ join crm_requests r on r.id=t.request_id and r.company_id=t.company_id
+ join app_users s on s.tg_id=t.supplier_id
+ where a.tg_id=p_actor and a.active and r.archived_at is null and
+   (a.role<>'manager' or r.assigned_to=a.tg_id)
+ order by r.updated_at desc,t.id
+ limit 11 offset (10*greatest(0,least(p_page,99999)))
+$$;
+revoke all on function public.bot_list_dialogs(bigint,integer) from public,anon,authenticated;
+grant execute on function public.bot_list_dialogs(bigint,integer) to service_role;

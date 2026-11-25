@@ -91,7 +91,12 @@ function amount(s){
   const n=Number(m[1].replace(/\s/g,'').replace(',','.'))*(m[2]?m[2].startsWith('м')?1e6:1000:1);
   return n>0&&n<=1e11?n:null;
 }
-export function intakeFields(text,origin){
+const required=['client_name','phone','model','budget','brand'];
+const questions={
+  client_name:'Как зовут клиента?', phone:'Какой у клиента телефон?',
+  model:'Какую марку и модель ищем?', budget:'Какой бюджет в рублях?', brand:'Какая марка у этой модели?'
+};
+export function intakeFields(text,origin,previous){
   const f={},value=String(text||'').trim();
   const phone=value.match(/(?:\+7|8)(?:[ ()-]*\d){10}(?!\d)/);
   if(phone)f.phone='7'+phone[0].replace(/\D/g,'').slice(-10);
@@ -130,13 +135,21 @@ export function intakeFields(text,origin){
     else if(k==='mileage'){const n=v.replace(/(?:\s|км)/gi,'');if(/^\d{1,8}$/.test(n)&&Number(n)<=20000000)f.mileage=Number(n);}
     else if(v.length<=({client_name:160,brand:80,color:100,years:80,trim:160}[k]||200))f[k]=v;
   }
+  if(previous&&value&&!Object.keys(f).length&&!value.includes(':')&&!value.includes('\n')){
+    const next=required.find(k=>!previous[k]);
+    if(next==='client_name'&&/^[\p{L}][\p{L}’' -]{0,80}$/u.test(value)&&value.split(/\s+/).length<=3)f.client_name=value;
+    if(next==='phone'){const phone=intakeFields('Телефон: '+value).phone;if(phone)f.phone=phone;}
+    if(next==='budget'){const n=amount(value);if(n)f.budget=n;}
+    if(next==='model'&&/^[\p{L}\d][\p{L}\d .-]{0,79}$/u.test(value))f.model=value;
+    if(next==='brand'&&/^[\p{L}][\p{L}\d -]{0,39}$/u.test(value))f.brand=value;
+  }
   return f;
 }
 export function intakePreview(f){
-  const missing=['client_name','phone','brand','model','budget'].filter(k=>!f[k]);
-  const rows=Object.entries(labels).filter(([k])=>f[k]!=null).map(([k,v])=>v+': '+(k==='budget'?Number(f[k]).toLocaleString('ru-RU')+' ₽':f[k]));
-  const prompt=missing.length?'Допишите отдельными строками:\n'+missing.map(k=>labels[k]+': …').join('\n'):
-    'Проверьте параметры. Поставщикам уйдут марка, модель, поколение, годы, пробег, цвет и комплектация. Нажмите «Создать заявку», если клиент согласен на обработку данных.';
+  const missing=required.filter(k=>!f[k]);
+  const rows=Object.entries(labels).filter(([k])=>f[k]!=null&&!(k==='brand'&&String(f.model||'').toLowerCase().startsWith(String(f.brand).toLowerCase()+' '))).map(([k,v])=>v+': '+(k==='budget'?Number(f[k]).toLocaleString('ru-RU')+' ₽':f[k]));
+  if(!rows.length&&missing.length===required.length)return {ready:false,text:'Новая заявка\n\nПерешлите сообщение клиента или напишите, какую машину он ищет. Можно начать с имени клиента.'};
+  const prompt=missing.length?questions[missing[0]]:'Проверьте данные и согласие клиента на их обработку.';
   const invalid=[];
   for(const [k,v] of Object.entries(f.filters||{})){
     if(!v||!filterSpec[k])continue;const [label,opts,max]=filterSpec[k];rows.push(label+': '+v);
@@ -144,5 +157,5 @@ export function intakePreview(f){
   }
   for(const key of ['year','mileage','price']){const a=f.filters?.[key+'_from'],b=f.filters?.[key+'_to'];if(a&&b&&Number(a)>Number(b))invalid.push(filterSpec[key+'_from'][0]+' больше верхней границы');}
   if(invalid.length)return {ready:false,text:rows.join('\n')+'\nИсправьте фильтры: '+invalid.join(', ')};
-  return {ready:!missing.length,text:['Черновик заявки',...rows,'',prompt,'Изменить любое поле можно сообщением «Поле: значение».'].join('\n')};
+  return {ready:!missing.length,text:['Черновик заявки',...rows,'',prompt,...(missing.length?[]:['Для исправления напишите, например, «Бюджет: 2500000».'])].join('\n')};
 }
