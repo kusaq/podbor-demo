@@ -101,6 +101,19 @@ const shot=(page,file)=>artifacts?page.screenshot({path:path.join(artifacts,file
  assert.equal(dbRead("select to_jsonb(count(*)) from supplier_photos f join bot_messages m on m.id=f.message_id where m.thread_id=:'tid';",{tid}),2);
  await managerDesk.getByRole('button',{name:'Обновить ответы'}).click();await managerDesk.locator('[data-wf="thread"]').selectOption(tid);
  await managerDesk.locator('[data-wf="reply"]').fill('Уточните срок поставки');await managerDesk.getByRole('button',{name:'Отправить поставщику'}).click();await managerDesk.locator('.wf-log').getByText('Уточните срок поставки',{exact:true}).waitFor();
+ // Exercise the real receiver and CRM projection. Supply the recognizer result at its boundary.
+ const company=dbRead("select to_jsonb(company_id) from bot_threads where id=:'tid'",{tid});
+ sql("insert into bot_session_companies(company_id) values(:'company')",{company},true);
+ await bot.drain();
+ const question=bot.messages.findLast(m=>String(m.chat_id)===String(supplier)&&m.text.includes('Уточните срок поставки'));
+ assert(question);
+ await bot.send(supplier,{reply_to_message:{message_id:question.message_id},voice:{file_id:'fixture-voice',duration:4}});
+ const voice=rpc('bot_session_claim',{p_company:company});assert.equal(voice.kind,'voice');assert.equal(voice.question,'Уточните срок поставки');
+ rpc('bot_session_finish',{p_job:voice.job_id,p_lease:voice.lease,p_text:'Около трёх недель.',p_facts:{kind:'clarification'}});
+ await managerDesk.getByRole('button',{name:'Обновить ответы'}).click();
+ const received=managerDesk.locator('.wf-message').filter({hasText:'Около трёх недель.'});
+ await received.getByText('Поставщик · голосовое',{exact:false}).waitFor();
+ assert.equal(await received.getByRole('button',{name:'Проверить и рассчитать'}).count(),0);
  await managerDesk.getByRole('button',{name:'Проверить и рассчитать'}).click();
  assert.equal(await managerDesk.locator('#domain-logistics').inputValue(),'50000');assert.equal(await managerDesk.locator('#domain-currency').inputValue(),'JPY');
  await managerDesk.getByRole('checkbox',{name:'Включить в КП'}).first().check();await managerDesk.locator('[data-upload-photos]').setInputFiles([{name:'Фото салона.jpg',mimeType:'image/jpeg',buffer:Buffer.from(jpeg,'base64')}]);

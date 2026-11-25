@@ -12,15 +12,24 @@ export class BotEngine{
   const m=u.message;if(!m)return;const original=m.text||m.caption||'';if(/^\/(start|help)(?:@\w+)?$/.test(original.trim())){await this.p.help(actor);return;}
   if(/^\/requests(?:@\w+)?$/.test(original.trim())){await this.p.requests(actor);return;}
   if(/^\/threads(?:@\w+)?$/.test(original.trim())){await this.p.threads(actor);return;}
-  if(m.voice){await this.p.notice(actor,'Пришлите сообщение текстом.');return;}
+  if(m.voice&&actor.role!=='supplier'){await this.p.notice(actor,'Для команды менеджера пришлите сообщение текстом.');return;}
   if(actor.role!=='supplier'&&m.text&&this.p.intakeMessage&&await this.p.intakeMessage(actor,m,job.id))return;
   if(actor.role==='supplier'&&!await this.p.hasThread(actor,m.reply_to_message?.message_id,m.media_group_id)){await this.p.threads(actor);return;}
   if(actor.role!=='supplier'&&m.reply_to_message)await this.p.hasThread(actor,m.reply_to_message.message_id);
+  if(m.voice){
+   if(!m.voice.file_id||!Number.isInteger(m.voice.duration)||m.voice.duration<1||m.voice.duration>120||m.voice.file_size>8388608){
+    await this.p.notice(actor,'Пришлите голосовое до 2 минут и 8 МБ или напишите ответ текстом.');return;
+   }
+   await this.p.enqueueSession(actor,job.id);return;
+  }
   const text=original;
   if(actor.role==='supplier' && (m.photo?.length||text.trim())){
    const safe=text.trim()?await this.p.supplierText(text,actor):{text:'',removed:[]};
-   if(!safe){await this.p.notice(actor,'Пришлите ответ по образцу для выбранной модели. Описание можно добавить ответом на фото.\n\n'+structuredExample);if(!m.photo?.length)return;}
-   await this.p.supplierReply(actor,m,safe||{text:''},job.id);return;
+   if(!safe){
+    if(m.photo?.length)await this.p.supplierReply(actor,m,{text:''},job.id);
+    await this.p.enqueueSession(actor,job.id);return;
+   }
+   await this.p.supplierReply(actor,m,safe,job.id);return;
   }
   if(!text.trim()){await this.p.notice(actor,'Пришлите текст. Поставщик также может отправить фотографии автомобиля.');return;}
   await this.p.saveTranscript(job.id,actor,text);

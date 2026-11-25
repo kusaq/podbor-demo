@@ -63,7 +63,7 @@ async function proposal(a:any,intent:any,transcript:string,jobId:number){const c
 const ports:any={
  actor,
  help:async(a:any)=>{
-  if(a.role==='supplier')return notice(a,'Ответьте на запрос текстом. Фото одной машины можно прислать альбомом. /threads показывает ваши диалоги.');
+  if(a.role==='supplier')return notice(a,'Ответьте на запрос своими словами. Можно записать голосовое до 2 минут или прислать фото машины одним альбомом. /threads показывает ваши диалоги.');
   const manual='Перешлите сообщение клиента или напишите /new, чтобы создать заявку. /requests показывает заявки, /threads открывает переписку.';
   return notice(a,manual+(AI?' Можно написать задачу текстом. Бот покажет черновик перед подтверждением.':''),[[{text:'Открыть кабинет',web_app:{url:MINI_APP_URL}}]]);
  },
@@ -111,13 +111,24 @@ const ports:any={
    }
    if(reply&&!ref?.thread_id&&!known)return false;
    if(known&&ref&&known.thread_id!==ref.thread_id)return false;
-   const id=known?.thread_id||ref?.thread_id;
-   if(!id)return !!(await context(a)).thread_id;
+   let id=known?.thread_id||ref?.thread_id;
+   if(!id){
+     if((await context(a)).thread_id)return true;
+     if(a.role!=='supplier')return false;
+     const only=await rpc('bot_session_only_thread',{p_actor:a.tg_id});
+     if(!only)return false;
+     id=only;
+   }
    const j=await rpc('bot_thread_access',{p_actor:a.tg_id,p_thread:id});
    await result(db.from('bot_context').upsert({user_id:a.tg_id,company_id:j.thread.company_id,request_id:j.thread.request_id,thread_id:id,offer_id:null,dialogue:[]}));
    return true;
  },
 
+ enqueueSession:async(a:any,jobId:number)=>{
+   const c=await context(a);
+   const accepted=await rpc('bot_session_enqueue',{p_actor:a.tg_id,p_thread:c.thread_id,p_job:jobId});
+   await notice(a,accepted?'Принято. После разбора ответ появится у менеджера в этой заявке.':'В этом салоне разбор свободных ответов пока выключен. Для цены используйте формат «Цена: 2450000 RUB».',undefined,{dedupe_key:'session-input:'+jobId});
+ },
  saveTranscript:async(id:any,a:any,text:string)=>{await result(db.from('bot_jobs').update({transcript:text}).eq('id',id).eq('actor_id',a.tg_id));},
  redact,
  supplierText:async(text:string,a:any)=>{
@@ -214,9 +225,26 @@ async function configureWebhook(req:Request){
  return Response.json({configured:true,bot:bot.username,bot_id:bot.id,pending:active.pending_update_count,
   menu_ready:menu.type==='web_app'&&menu.web_app?.url===MINI_APP_URL,text_model_configured:!!AI});
 }
+async function sessionVoice(req:Request){
+ // The short-lived ticket authorizes exactly one queued voice recording.
+ try{
+  const bytes=await boundedBytes(new Response(req.body),256);
+  const input=JSON.parse(new TextDecoder().decode(bytes));
+  if(!/^\d{1,15}$/.test(String(input.job_id))||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(input.lease))return new Response('',{status:400});
+  const fileId=await rpc('bot_session_audio_ref',{p_job:input.job_id,p_lease:input.lease});
+  if(!fileId)return new Response('',{status:403});
+  const file=await tg('getFile',{file_id:fileId});
+  if(!/^(?:voice|voice_notes)\/[A-Za-z0-9_-]+\.(?:oga|ogg|opus)$/i.test(file.file_path)||Number(file.file_size)>8388608)return new Response('',{status:422});
+  const media=await fetch('https://api.telegram.org/file/bot'+BOT+'/'+file.file_path,{redirect:'error',signal:AbortSignal.timeout(20000)});
+  const audio=await boundedBytes(media,8388608);
+  if(audio.length<4||String.fromCharCode(...audio.subarray(0,4))!=='OggS')return new Response('',{status:422});
+  return new Response(audio,{headers:{'content-type':'audio/ogg','cache-control':'no-store'}});
+ }catch{return new Response('',{status:400});}
+}
 Deno.serve(async(req)=>{
  if(req.method!=='POST')return new Response('',{status:405});
  const path=new URL(req.url).pathname.replace(/\/+$/,'')||'/';
+ if(path.endsWith('/session-voice'))return sessionVoice(req);
  const worker=path.endsWith('/drain'),install=path.endsWith('/configure-webhook');
  if(!worker&&!install&&!path.endsWith('/telegram-bot')&&path!=='/')return new Response('',{status:404});
  const key=worker||install?'worker':'webhook';

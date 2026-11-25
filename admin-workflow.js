@@ -70,9 +70,9 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     const channels=[...(inbox.sources||[])];if(inbox.listings?.length)channels.push({source:'manual',state:'ready',results:inbox.listings});
     const sources=channels.map(s=>'<div class="domain-box"><b>'+(s.source==='stock'?'МойСклад':s.source==='manual'?'Сохранённые объявления':'Объявления')+'</b><span class="sub">'+esc(states[s.state]||s.state)+(s.state==='ready'?' · '+s.results.length:'')+'</span>'+
       (s.results||[]).map((r,i)=>'<div class="row between"><span>'+esc(r.title)+' · '+esc(r.purchase??'Цена по запросу')+' '+esc(r.currency)+(r.link&&/^https:\/\//i.test(r.link)?' · <a target="_blank" rel="noreferrer" href="'+esc(r.link)+'">Объявление</a>':'')+'</span>'+action('source','В расчёт',s.source+':'+i)+'</div>').join('')+'</div>').join('');
-    const messages=(t?.messages||[]).map(m=>'<li class="wf-message"><small>'+ (m.incoming?'Поставщик':'Менеджер')+' · '+esc(new Date(m.at).toLocaleString('ru-RU'))+(m.delivery?' · '+esc(states[m.delivery]||m.delivery):'')+'</small><p>'+esc(m.text||'Фото автомобиля')+'</p>'+
+    const messages=(t?.messages||[]).map(m=>'<li class="wf-message"><small>'+ (m.incoming?(m.parsed?.input_kind==='voice'?'Поставщик · голосовое':'Поставщик'):'Менеджер')+' · '+esc(new Date(m.at).toLocaleString('ru-RU'))+(m.delivery?' · '+esc(states[m.delivery]||m.delivery):'')+'</small><p>'+esc(m.text||'Фото автомобиля')+'</p>'+
       ((m.photos||[]).length?'<div class="wf-photos">'+m.photos.map((key,i)=>images.has(key)?'<img alt="Фото автомобиля" src="'+esc(images.get(key))+'">':action('photo','Фото '+(i+1),key)).join('')+'</div>':'')+
-      (m.incoming?(m.option_id?'<span class="status won">В подборе</span>':writable?action('use','Проверить и рассчитать',m.id):''):'')+'</li>').join('');
+      (m.incoming?(m.option_id?'<span class="status won">В подборе</span>':writable&&(!m.parsed?.kind||m.parsed.kind==='quote')?action('use','Проверить и рассчитать',m.id):''):'')+'</li>').join('');
     const sentCars=inbox.sent_cars||[];
     const chosen=inbox.choice;
     const selection=!inbox.order&&chosen&&request()?.status==='won'?'<section class="domain-box"><h3>Выбор клиента</h3><b>'+esc(chosen.title)+'</b><span class="sub">КП № '+esc(chosen.number)+' · '+esc(Number(chosen.price).toLocaleString('ru-RU'))+' ₽</span></section>':'';
