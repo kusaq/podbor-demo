@@ -34,7 +34,7 @@ export async function createOffer(model, loadPhoto) {
   }
   await line(model.dealer.name || 'Автоподбор', 14, 8);
   await line('Коммерческое предложение', 22, 8);
-  await line('Для ' + model.client + ' · ' + new Date(model.createdAt).toLocaleDateString('ru-RU'), 11, 14);
+  await line('Клиент · ' + model.client + ' · ' + new Date(model.createdAt).toLocaleDateString('ru-RU'), 11, 14);
   for (var i = 0; i < model.cars.length; i++) {
     var car = model.cars[i];
     await line((i + 1) + '. ' + car.title, 15, 3);
@@ -47,7 +47,7 @@ export async function createOffer(model, loadPhoto) {
       page.drawImage(photo, {x:45,y,width:size.width,height:size.height});
       y -= 14;
     }
-    await line(car.price.toLocaleString('ru-RU') + ' ₽ · ' + car.term, 13, 14);
+    await line(car.price.toLocaleString('ru-RU') + ' ₽' + (car.term ? ' · ' + car.term : ''), 13, 14);
   }
   await line('Цена действует до ' + new Date(model.validUntil).toLocaleDateString('ru-RU'), 11, 8);
   if (model.dealer.inn) await line('ИНН ' + model.dealer.inn, 10, 0);

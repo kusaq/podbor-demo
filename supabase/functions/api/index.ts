@@ -188,8 +188,14 @@ Deno.serve(async (req) => {
   if (action?.startsWith('workflow.')) {
     if (!['admin','owner','manager'].includes(me.role)) return json({error:'crm_forbidden'},403);
     const op=action.slice(9);
-    if (!['network','terms.save','policy.save','inbox','dispatch','photo','option.fromReply','reply','search.retry','listing.save'].includes(op)) return json({error:'backend_bad_action'},400);
+    if (!['network','terms.save','policy.save','inbox','choose_car','dispatch','photo','option.fromReply','reply','search.retry','listing.save'].includes(op)) return json({error:'backend_bad_action'},400);
     if (JSON.stringify(p).length>20000) return json({error:'backend_bad_data'},400);
+    if (op==='choose_car') {
+      const ids=[p.request_id,p.offer,p.option,p.token];
+      if (!ids.every(id=>typeof id==='string' && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) ||
+          !Number.isSafeInteger(p.version) || Number(p.version)<1 || typeof p.note!=='string' || p.note.length>2000)
+        return json({error:'crm_bad_data'},400);
+    }
     if (op==='reply') {
       const detail=await db.rpc('crm_request_detail',{p_actor:myId,p_id:p.request_id});
       if(detail.error) return crmError(detail.error);

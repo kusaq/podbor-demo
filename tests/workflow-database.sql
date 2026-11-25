@@ -69,7 +69,16 @@ begin
  update crm_requests set next_contact_at=now()-interval '1 hour' where id=rid;
  perform workflow_queue_due();perform workflow_queue_due();
  if (select count(*) from bot_outbox where request_id=rid and reminder='feedback')<>1 then raise exception 'feedback reminder dedup';end if;
- perform crm_log_contact(81101,rid,(select version from crm_requests where id=rid),gen_random_uuid(),'connected','Заказ оформлен','{"status":"won"}');
+ a:=jsonb_build_object('request_id',rid,'version',(select version from crm_requests where id=rid),'token',gen_random_uuid(),'offer',offer->>'id','option',oid,'note','Заказ оформлен');
+ begin
+  perform crm_workflow(81101,'choose_car',a||jsonb_build_object('option',gen_random_uuid()));
+  raise exception 'unoffered car selected';
+ exception when raise_exception then if sqlerrm<>'crm_bad_data' then raise;end if;end;
+ result:=crm_workflow(81101,'choose_car',a);
+ if (result->'choice'->>'price')::numeric<>1050000 or result->'choice'->>'option'<>oid::text then raise exception 'choice lost its offer snapshot';end if;
+ perform crm_workflow(81101,'choose_car',a);
+ if (select count(*) from crm_activity where request_id=rid and kind='car.chosen')<>1 or
+    (select status from crm_requests where id=rid)<>'won' then raise exception 'car choice not saved once';end if;
  if exists(select 1 from workflow_due where request_id=rid) then raise exception 'closed request still due';end if;
 end $$;
 select 'PASS request retry, brand matching, parallel sources, privacy, photos and album dedup, terms, partial offer, reminder dedup and client outcome' as result;

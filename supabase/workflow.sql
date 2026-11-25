@@ -165,7 +165,7 @@ end $$;
 create or replace function public.crm_workflow(p_actor bigint,p_action text,p jsonb)
 returns jsonb language plpgsql security invoker set search_path=public,pg_temp as $$
 declare a app_users; r crm_requests; t bot_threads; m bot_messages; u app_users; terms supplier_terms; pol workflow_policy;
- photos uuid[]; photo uuid; result jsonb; k text; fees jsonb; brands text[]; body text; dest bigint; rev int; oldrev int;
+ photos uuid[]; photo uuid; result jsonb; k text; fees jsonb; brands text[]; body text; dest bigint; rev int; oldrev int; previous_choice jsonb;
 begin
  select * into a from app_users where tg_id=p_actor and active and role in ('manager','owner','admin');
  if not found then raise exception 'crm_forbidden'; end if;
@@ -213,7 +213,11 @@ begin
  perform crm_request_detail(p_actor,(p->>'request_id')::uuid);
  select * into strict r from crm_requests where id=(p->>'request_id')::uuid for update;
  if p_action='inbox' then
-  return jsonb_build_object('spec',(select to_jsonb(b)-'company_id' from bot_request_specs b where b.request_id=r.id),
+  return jsonb_build_object(
+   'sent_cars',coalesce((select jsonb_agg(jsonb_build_object('offer',f.id,'number',f.number,'option',f.option_ids[n],'title',f.model->'cars'->(n-1)->>'title','price',f.model->'cars'->(n-1)->'price') order by f.number desc,n)
+     from request_offers f cross join lateral generate_subscripts(f.option_ids,1) n where f.request_id=r.id and f.sent_at is not null),'[]'),
+   'choice',(select data->'choice' from crm_activity where request_id=r.id and kind='car.chosen' order by created_at desc,id desc limit 1),
+   'spec',(select to_jsonb(b)-'company_id' from bot_request_specs b where b.request_id=r.id),
    'listings',coalesce((select jsonb_agg(jsonb_build_object('title',l.title,'purchase',l.purchase,'currency','RUB','term',l.term,'link',l.url) order by l.title) from request_listings l where l.request_id=r.id),'[]'),
    'sources',coalesce((select jsonb_agg(to_jsonb(s)-'request_id') from search_sources s where s.request_id=r.id),'[]'),
    'threads',coalesce((select jsonb_agg(jsonb_build_object('id',th.id,'code',th.code,
@@ -227,6 +231,21 @@ begin
      from bot_messages z where z.thread_id=th.id),'[]')) order by th.code)
     from bot_threads th join app_users su on su.tg_id=th.supplier_id left join supplier_terms tr on tr.supplier_id=su.tg_id and tr.company_id=r.company_id
     where th.request_id=r.id),'[]'));
+ end if;
+ if p_action='choose_car' then
+  select jsonb_build_object('offer',f.id,'option',f.option_ids[n],'number',f.number,'title',f.model->'cars'->(n-1)->>'title','price',f.model->'cars'->(n-1)->'price')
+    into result from request_offers f cross join lateral generate_subscripts(f.option_ids,1) n
+    where f.id=(p->>'offer')::uuid and f.request_id=r.id and f.sent_at is not null and f.option_ids[n]=(p->>'option')::uuid;
+  if not found then raise exception 'crm_bad_data'; end if;
+  select data->'choice' into previous_choice from crm_activity where request_id=r.id and actor_id=p_actor and kind='car.chosen' and data->>'token'=p->>'token';
+  if found then
+   if previous_choice is distinct from result then raise exception 'crm_conflict'; end if;
+  elsif r.status<>'think' then raise exception 'backend_closed'; end if;
+  perform crm_log_contact(p_actor,r.id,(p->>'version')::integer,(p->>'token')::uuid,'connected',coalesce(p->>'note',''),'{"status":"won","next_contact_at":null}');
+  if previous_choice is null then
+   insert into crm_activity(company_id,request_id,actor_id,kind,data) values(r.company_id,r.id,p_actor,'car.chosen',jsonb_build_object('token',p->>'token','choice',result));
+  end if;
+  return jsonb_build_object('choice',result);
  end if;
  if p_action='photo' then
   select jsonb_build_object('data','data:image/jpeg;base64,'||f.jpeg) into result from supplier_photos f

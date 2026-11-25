@@ -2,7 +2,7 @@
 window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,formatError,refreshCard}) {
   const root=document.getElementById('admin');
   const op=(name,data={})=>api('workflow.'+name,data);
-  const fees={logistics:'Доставка',commission:'Комиссия',duty:'Пошлина',recycling:'Утильсбор',documents:'Оформление'};
+  const fees={logistics:'Доставка до клиента',commission:'Комиссия',duty:'Пошлина',recycling:'Утильсбор',documents:'Оформление'};
   const currencies=['RUB','CNY','JPY','USD','EUR'];
   const states={pending:'В очереди',running:'Идёт поиск',ready:'Поиск завершён',unconfigured:'Источник не подключён',failed:'Ошибка',sent:'Доставлен',sending:'Отправляется',uncertain:'Проверить доставку'};
   let id='',inbox=null,network=null,networkDraft=null,policyDraft=null,selected='',thread='',revision=0,busy=false,error='',tokens={},formValues={},edited=false;
@@ -57,14 +57,20 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     const messages=(t?.messages||[]).map(m=>'<li class="wf-message"><small>'+ (m.incoming?'Поставщик':'Менеджер')+' · '+esc(new Date(m.at).toLocaleString('ru-RU'))+(m.delivery?' · '+esc(states[m.delivery]||m.delivery):'')+'</small><p>'+esc(m.text||'Фото автомобиля')+'</p>'+
       ((m.photos||[]).length?'<div class="wf-photos">'+m.photos.map((key,i)=>images.has(key)?'<img alt="Фото автомобиля" src="'+esc(images.get(key))+'">':action('photo','Фото '+(i+1),key)).join('')+'</div>':'')+
       (m.incoming?(m.option_id?'<span class="status won">В подборе</span>':writable?action('use','Проверить и рассчитать',m.id):''):'')+'</li>').join('');
+    const sentCars=inbox.sent_cars||[];
+    const chosen=inbox.choice;
+    const selection=chosen&&request()?.status==='won'?'<section class="domain-box"><h3>Выбор клиента</h3><b>'+esc(chosen.title)+'</b><span class="sub">КП № '+esc(chosen.number)+' · '+esc(Number(chosen.price).toLocaleString('ru-RU'))+' ₽</span></section>':'';
+    const carPicker=sentCars.length?'<label class="field">Какую машину выбрал клиент<select data-wf="car" required><option value="">Выберите из отправленных КП</option>'+sentCars.map(c=>'<option value="'+esc(c.offer+'/'+c.option)+'" '+(v.car===c.offer+'/'+c.option?'selected':'')+'>'+esc(c.title)+' · '+esc(Number(c.price).toLocaleString('ru-RU'))+' ₽ · КП № '+esc(c.number)+'</option>').join('')+'</select></label>':'';
     const feedback=request()?.status==='think'?'<form class="domain-box" id="wf-feedback"><h3>Реакция клиента на КП</h3><label class="field">Итог<select data-wf="outcome">'+
       [['think','Продолжает выбирать'],['won','Заказ оформлен'],['lost','Отказ'],['no_answer','Не дозвонились']].map(([key,title])=>'<option value="'+key+'" '+((v.outcome||'think')===key?'selected':'')+'>'+title+'</option>').join('')+
-      '</select></label>'+input('note','Комментарий, при отказе укажите причину',v.note)+input('next','Следующий контакт',v.next,'datetime-local')+'<button class="btn small">Записать результат</button></form>':'';
-    return feedback+'<section class="wf-inbox"><div class="row between"><h3>Ответы поставщиков · '+threads.length+'</h3>'+action('refresh','Обновить ответы')+'</div>'+alert+(writable?search:'')+
+      '</select></label>'+(v.outcome==='won'?carPicker:'')+input('note','Комментарий, при отказе укажите причину',v.note)+input('next','Следующий контакт',v.next,'datetime-local')+'<button class="btn small">Записать результат</button></form>':'';
+    const sourcePanel='<details class="domain-box"><summary>МойСклад, Авто.ру и Авито</summary>'+sources+(writable?action('retry','Обновить поиск')+
+      '<div class="row wrap"><a class="btn small ghost" target="_blank" rel="noreferrer" href="https://auto.ru/cars/all/">Открыть Авто.ру</a><a class="btn small ghost" target="_blank" rel="noreferrer" href="https://www.avito.ru/rossiya/avtomobili?q='+encodeURIComponent(request()?.model||'')+'">Найти на Авито</a></div><form id="wf-listing"><h4>Добавить объявление по ссылке</h4>'+input('listingUrl','Ссылка на объявление',v.listingUrl,'url','required')+input('listingTitle','Автомобиль',v.listingTitle,'text','required')+input('listingPrice','Цена объявления, ₽',v.listingPrice,'number','min="1"')+'<button class="btn small">Сохранить объявление</button></form>':'')+'</details>';
+    const answered=threads.filter(t=>t.messages?.some(m=>m.incoming)).length;
+    return selection+feedback+sourcePanel+'<section class="wf-inbox"><div class="row between"><h3>Ответили '+answered+' из '+threads.length+'</h3>'+action('refresh','Обновить ответы')+'</div>'+alert+(writable?search:'')+
       (threads.length?'<label class="field">Диалог<select data-wf="thread">'+threads.map(t=>'<option value="'+esc(t.id)+'" '+(t.id===thread?'selected':'')+'>'+esc(t.name)+' · '+esc(t.code)+'</option>').join('')+'</select></label>':'<p class="footnote">Диалогов пока нет. Проверьте марку и включённые профили поставщиков.</p>')+
       (t?'<p class="footnote">Первый запрос · '+esc(states[t.delivery]||'Подготовлен')+'</p><ol class="wf-log">'+messages+'</ol>'+(writable?'<form id="wf-reply"><label class="field">Ответ через бота<textarea data-wf="reply" required maxlength="2500" placeholder="Уточните состояние, цену или срок">'+esc(v.reply||'')+'</textarea></label><button class="btn small">Отправить поставщику</button></form>':''):'')+
-      '<details class="domain-box"><summary>Склад и объявления</summary>'+sources+(writable?action('retry','Обновить поиск')+
-      '<form id="wf-listing"><h4>Добавить объявление</h4>'+input('listingUrl','Ссылка на объявление',v.listingUrl,'url','required')+input('listingTitle','Автомобиль',v.listingTitle,'text','required')+input('listingPrice','Цена объявления, ₽',v.listingPrice,'number','min="1"')+'<button class="btn small">Сохранить объявление</button></form>':'')+'</details>'+'</section>';
+      '</section>';
   }
   function photoPicker(d){
     if(!d.candidates?.length)return '';
@@ -95,6 +101,7 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
   root.addEventListener('change',event=>{
     const el=event.target;
     if(el.dataset.wfPhoto){const d=domain().getDraft();if(!d)return;d.photos=el.checked?[...new Set([...d.photos,el.dataset.wfPhoto])]:d.photos.filter(x=>x!==el.dataset.wfPhoto);return;}
+    if(el.dataset.wf==='outcome'){formValues.outcome=el.value;render();return;}
     if(el.dataset.wf==='thread'){if(formValues.reply?.trim()&&!confirm('Закрыть черновик ответа?')){el.value=thread;return;}thread=el.value;delete formValues.reply;delete tokens.reply;render();}
   });
   root.addEventListener('click',event=>{
@@ -138,8 +145,12 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
         const next=['no_answer','think'].includes(outcome)&&formValues.next?new Date(formValues.next).toISOString():null;
         const data={status:outcome==='no_answer'?'think':outcome,next_contact_at:next,...(outcome==='lost'?{reasons:['Другое'],main_reason:'Другое',note}:{})};
         const payload={id,version:d.version,result:outcome==='no_answer'?'no_answer':'connected',note,data};
-        const key=JSON.stringify(payload);if(tokens.feedbackKey!==key){tokens.feedbackKey=key;tokens.feedback=crypto.randomUUID();}
-        await api('crm.contact.save',{...payload,token:tokens.feedback});formValues={};edited=false;await refreshCard(id);flash('Результат сохранён в истории клиента');return;
+        const key=JSON.stringify([payload,formValues.car]);if(tokens.feedbackKey!==key){tokens.feedbackKey=key;tokens.feedback=crypto.randomUUID();}
+        if(outcome==='won'&&inbox.sent_cars?.length){
+          const car=inbox.sent_cars.find(c=>c.offer+'/'+c.option===formValues.car);
+          if(!car){flash('Выберите автомобиль из отправленного КП');return;}
+          await op('choose_car',{request_id:id,version:d.version,offer:car.offer,option:car.option,note,token:tokens.feedback});
+        }else await api('crm.contact.save',{...payload,token:tokens.feedback});formValues={};edited=false;await refreshCard(id);flash('Результат сохранён в истории клиента');return;
       }
       if(form.id==='wf-reply'){
         const text=(formValues.reply||'').trim();if(!text)return;
