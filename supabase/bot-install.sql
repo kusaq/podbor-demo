@@ -53,6 +53,7 @@ begin
   return jsonb_build_object('ok',true);
  end if;
  if payload->'configured' is distinct from 'true'::jsonb then raise exception 'Webhook not confirmed'; end if;
- return jsonb_build_object('configured',true,'bot',payload->'bot','bot_id',payload->'bot_id','pending',payload->'pending');
+ return jsonb_build_object('configured',true,'bot',payload->'bot','bot_id',payload->'bot_id','pending',payload->'pending',
+  'menu_ready',payload->'menu_ready','text_model_configured',payload->'text_model_configured');
 end $$;
 revoke all on function public.podbor_run_bot(text) from public, anon, authenticated, service_role;

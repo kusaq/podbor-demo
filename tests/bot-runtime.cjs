@@ -6,8 +6,10 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert'),{webcrypto,rand
  async function run(){const list=rows[table]||=[];let found=list.filter(r=>filters.every(f=>f(r)));if(op==='insert'){if(table==='bot_jobs'&&list.some(r=>r.id===values.id))return {error:{code:'23505'}};if(table==='bot_outbox'&&values.dedupe_key&&list.some(r=>r.dedupe_key===values.dedupe_key))return {error:{code:'23505'}};const value={id:values.id||randomUUID(),state:'pending',attempts:0,...values};list.push(value);found=[value];}if(op==='upsert'){let old=list.find(r=>r.user_id===values.user_id);if(old)Object.assign(old,values);else{old={...values};list.push(old)}found=[old]}if(op==='update')found.forEach(r=>Object.assign(r,values));return {data:one?(found[0]||null):found.map(r=>({...r})),error:null}}return q}
  const db={from,rpc:async(name,args)=>{if(name==='bot_claim_job'){const j=rows.bot_jobs.find(r=>r.state==='pending');if(j){j.state='running';j.attempts++;}return {data:j?{...j}:null,error:null}}if(name==='bot_thread_access')return {data:{thread:{id:args.p_thread,company_id:'company',request_id:'fixture-request',supplier_id:200},manager:100,model:'Toyota Camry'}};if(name==='workflow_receive'){receipts.push(args);return {data:{id:'fixture-message'}};}throw Error('Unexpected RPC '+name)}};
  const config={SUPABASE_URL:'https://unit.invalid',SUPABASE_SERVICE_ROLE_KEY:'not-real',BOT_TOKEN:'123:fake',OPENAI_API_KEY:'not-real',TELEGRAM_WEBHOOK_SECRET:'s'.repeat(40),BOT_WORKER_SECRET:'w'.repeat(40)};
- let webhookUrl='';const registrations=[];
- async function fetchFake(url,options={}){if(url.endsWith('/getMe'))return Response.json({ok:true,result:{id:123,username:'sample_bot'}});
+ let webhookUrl='',menu={type:'default'};const registrations=[];
+ async function fetchFake(url,options={}){if(url.endsWith('/getChatMenuButton'))return Response.json({ok:true,result:menu});
+  if(url.endsWith('/setChatMenuButton')){menu=JSON.parse(options.body).menu_button;return Response.json({ok:true,result:true});}
+  if(url.endsWith('/getMe'))return Response.json({ok:true,result:{id:123,username:'sample_bot'}});
   if(url.endsWith('/getWebhookInfo'))return Response.json({ok:true,result:{url:webhookUrl,pending_update_count:2}});
   if(url.endsWith('/setWebhook')){const params=JSON.parse(options.body);registrations.push(params);webhookUrl=params.url;return Response.json({ok:true,result:true});}
   if(url.endsWith('/getFile'))return Response.json({ok:true,result:{file_path:'photos/file_1.jpg'}});if(url.includes('/file/bot'))return new Response(new Uint8Array([255,216,255,1,2]));if(url.endsWith('/audio/transcriptions')){assert(options.body instanceof FormData);return Response.json({text:'Создай заявку Toyota Camry'})}if(url.endsWith('/chat/completions')){const b=JSON.parse(options.body);const content=b.messages[0].content.startsWith('Найди')?{spans:[]}:{action:'create_request',fields:{client_name:'Private client',phone:'89991234567',model:'Camry',brand:'toyota',budget:3500000,generation:'XV70',years:'2021-2023',color:'Белый',trim:'Любая'},text:''};return Response.json({choices:[{message:{content:JSON.stringify(content)}}]})}if(url.endsWith('/sendMessage')){const b=JSON.parse(options.body);messages.push(b);return Response.json({ok:true,result:{message_id:messages.length}})}throw Error('Unexpected network '+url)}
@@ -29,7 +31,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert'),{webcrypto,rand
  assert.equal((await serve(request({},worker))).status,403);
  webhookUrl='https://existing.invalid';assert.equal((await install(worker,hook)).status,409);assert.equal(registrations.length,0);
  webhookUrl='';const setup=await install(worker,hook);assert.equal(setup.status,200);
- assert.deepEqual(await setup.json(),{configured:true,bot:'sample_bot',bot_id:123,pending:2});
+ assert.deepEqual(await setup.json(),{configured:true,bot:'sample_bot',bot_id:123,pending:2,menu_ready:true,text_model_configured:true});
  assert.equal(registrations[0].drop_pending_updates,false);assert.equal(registrations[0].secret_token,hook);
  assert.equal(webhookUrl,'https://unit.invalid/functions/v1/telegram-bot');assert.equal((await install(worker,hook)).status,200);
  console.log('PASS Vault keys, fixed Telegram webhook, preserves updates and existing foreign webhook');

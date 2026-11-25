@@ -5,6 +5,7 @@ import { createOffer } from './pdf.mjs';
 const env=(k:string)=>Deno.env.get(k)||'';
 const db=createClient(env('SUPABASE_URL'),env('SUPABASE_SERVICE_ROLE_KEY'),{auth:{persistSession:false}});
 const BOT=env('BOT_TOKEN'),AI=env('OPENAI_API_KEY');
+const MINI_APP_URL=env('MINI_APP_URL')||'https://kusaq.github.io/podbor-demo/';
 async function rpc(name:string,args:any={}){const r=await db.rpc(name,args);if(r.error)throw Error(r.error.message);return r.data;}
 async function result(q:any){const r=await q;if(r.error)throw Error('database_error');return r.data;}
 async function actor(id:any){return result(db.from('app_users').select('tg_id,name,role,company_id,active').eq('tg_id',id).maybeSingle());}
@@ -60,7 +61,11 @@ async function proposal(a:any,intent:any,transcript:string,jobId:number){const c
 }
 const ports:any={
  actor,
- help:async(a:any)=>notice(a,a.role==='supplier'?'Отвечайте на запрос текстом. Фото одной машины можно прислать альбомом. /threads показывает ваши диалоги.':'Напишите команду. Например: «Создай заявку…», «Добавь заметку…», «Подготовь КП с вариантами 1 и 3». /requests выбирает заявку, /threads выбирает переписку. Любое изменение сначала показывается черновиком.'),
+ help:async(a:any)=>{
+  if(a.role==='supplier')return notice(a,'Ответьте на запрос текстом. Фото одной машины можно прислать альбомом. /threads показывает ваши диалоги.');
+  const manual='Откройте кабинет для работы с заявками. /requests показывает заявки, /threads открывает переписку.';
+  return notice(a,manual+(AI?' Можно написать задачу текстом. Бот покажет черновик перед подтверждением.':''),[[{text:'Открыть кабинет',web_app:{url:MINI_APP_URL}}]]);
+ },
  requests:requestList,threads:threadList,notice,
  selectRequest:async(a:any,id:string)=>{if(a.role==='supplier')throw Error('crm_forbidden');await rpc('crm_request_detail',{p_actor:a.tg_id,p_id:id});await result(db.from('bot_context').upsert({user_id:a.tg_id,company_id:a.company_id,request_id:id,thread_id:null,offer_id:null,dialogue:[]}));await notice(a,'Заявка выбрана. Пришлите команду текстом.');},
  reviewSupplier:async(a:any,id:string)=>{if(a.role==='supplier')throw Error('crm_forbidden');const m=await result(db.from('bot_messages').select('*').eq('id',id).single());const j=await rpc('bot_thread_access',{p_actor:a.tg_id,p_thread:m.thread_id});await result(db.from('bot_context').upsert({user_id:a.tg_id,company_id:a.company_id,request_id:j.thread.request_id,thread_id:m.thread_id,offer_id:null,dialogue:[{role:'supplier_draft',fields:m.parsed||{},text:m.sanitized_text}]}));await notice(a,'Черновик ответа поставщика\n'+JSON.stringify(m.parsed||{},null,2)+'\nПроверьте данные. Назначьте цену клиенту и расходы в CRM. До подтверждения вариант в CRM не добавляется.');},
@@ -165,7 +170,16 @@ async function configureWebhook(req:Request){
  if(current.url&&current.url!==url)return Response.json({error:'another_webhook',bot:bot.username},{status:409});
  await tg('setWebhook',{url,secret_token:secret,allowed_updates:['message','callback_query'],max_connections:1,drop_pending_updates:false});
  const active=await tg('getWebhookInfo',{});
- return Response.json({configured:active.url===url,bot:bot.username,bot_id:bot.id,pending:active.pending_update_count},{status:active.url===url?200:502});
+ if(active.url!==url)return Response.json({configured:false},{status:502});
+ let menu=await tg('getChatMenuButton',{});
+ if(menu.type!=='web_app'||menu.web_app?.url===MINI_APP_URL){
+  if(menu.type!=='web_app'||menu.text!=='Кабинет'){
+   await tg('setChatMenuButton',{menu_button:{type:'web_app',text:'Кабинет',web_app:{url:MINI_APP_URL}}});
+   menu=await tg('getChatMenuButton',{});
+  }
+ }
+ return Response.json({configured:true,bot:bot.username,bot_id:bot.id,pending:active.pending_update_count,
+  menu_ready:menu.type==='web_app'&&menu.web_app?.url===MINI_APP_URL,text_model_configured:!!AI});
 }
 Deno.serve(async(req)=>{
  if(req.method!=='POST')return new Response('',{status:405});
