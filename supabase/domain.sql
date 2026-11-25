@@ -23,6 +23,7 @@ create table if not exists public.request_options (
  approved_fingerprint text, archived boolean not null default false, version integer not null default 1,
  created_by bigint references public.app_users(tg_id) on delete set null on update cascade, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
+alter table public.request_options add column if not exists photo_ids uuid[] not null default '{}';
 create table if not exists public.price_decisions (
  id uuid primary key default gen_random_uuid(), company_id uuid not null references public.app_companies(id), request_id uuid not null references public.crm_requests(id),
  option_id uuid not null references public.request_options(id), actor_id bigint references public.app_users(tg_id) on delete set null on update cascade,
@@ -75,6 +76,7 @@ begin
  end if;
  if coalesce((s.pricing->>'margin_enabled')::boolean,true) and margin<(s.pricing->>'margin_pct')::numeric then reasons:=reasons||'"Маржа ниже порога"'::jsonb; end if;
  fingerprint:=md5(jsonb_build_array(o.title,o.description,o.scenario,o.currency,o.input,o.calculation,o.client_price,o.market_median,o.term,s.pricing)::text);
+ if cardinality(o.photo_ids)>0 then fingerprint:=md5(fingerprint||o.photo_ids::text); end if;
  return jsonb_build_object('margin_pct',margin,'reasons',reasons,'fingerprint',fingerprint,'needs_approval',jsonb_array_length(reasons)>0,
   'can_send',not o.archived and o.client_price>=o.total_cost and ((o.approval='none' and jsonb_array_length(reasons)=0) or (o.approval='approved' and o.approved_fingerprint=fingerprint)));
 end $$;
@@ -159,7 +161,7 @@ begin
    insert into public.request_options(request_id,company_id,title,description,scenario,currency,input,calculation,purchase_rub,total_cost,client_price,market_median,term,source_name,created_by)
    values(r.id,a.company_id,trim(p->>'title'),coalesce(p->>'description',''),p->>'scenario',case when p->>'scenario'='rf' then 'RUB' else p->>'currency' end,inp,calc,purchase,cost,price,median,coalesce(p->>'term',''),coalesce(p->>'source_name',''),p_actor) returning * into o;
   else
-   update public.request_options set title=trim(p->>'title'),description=coalesce(p->>'description',''),scenario=p->>'scenario',currency=case when p->>'scenario'='rf' then 'RUB' else p->>'currency' end,input=inp,calculation=calc,purchase_rub=purchase,total_cost=cost,client_price=price,market_median=median,term=coalesce(p->>'term',''),source_name=coalesce(p->>'source_name',''),approval='none',approved_fingerprint=null,version=version+1,updated_at=now() where id=old.id returning * into o;
+   update public.request_options set title=trim(p->>'title'),description=coalesce(p->>'description',''),scenario=p->>'scenario',currency=case when p->>'scenario'='rf' then 'RUB' else p->>'currency' end,input=inp,calculation=(old.calculation-'input'-'total_cost')||calc,purchase_rub=purchase,total_cost=cost,client_price=price,market_median=median,term=coalesce(p->>'term',''),source_name=coalesce(p->>'source_name',''),approval='none',approved_fingerprint=null,version=version+1,updated_at=now() where id=old.id returning * into o;
   end if;
   insert into public.crm_activity(company_id,request_id,actor_id,kind,data) values(a.company_id,r.id,p_actor,'option.saved',jsonb_build_object('option_id',o.id,'price',price,'cost',cost));
   update public.crm_requests set updated_at=now() where id=r.id;
@@ -200,7 +202,7 @@ begin
    evaluation:=public.option_evaluation(o,s);
    if not (evaluation->>'can_send')::boolean then raise exception 'backend_approval_required'; end if;
    validation:=validation||jsonb_build_object(o.id::text,evaluation->>'fingerprint');
-   cars:=cars||jsonb_build_object('title',regexp_replace(o.title,'(https?://[^ ]+|[[:alnum:]_.+-]+@[[:alnum:].-]+|@[[:alnum:]_]+|[+]?[0-9][0-9 ()-]{8,}[0-9])','[контакты удалены]','gi'),'description',regexp_replace(o.description,'(https?://[^ ]+|[[:alnum:]_.+-]+@[[:alnum:].-]+|@[[:alnum:]_]+|[+]?[0-9][0-9 ()-]{8,}[0-9])','[контакты удалены]','gi'),'price',o.client_price,'term',regexp_replace(o.term,'(https?://[^ ]+|[[:alnum:]_.+-]+@[[:alnum:].-]+|@[[:alnum:]_]+|[+]?[0-9][0-9 ()-]{8,}[0-9])','[контакты удалены]','gi'));
+   cars:=cars||jsonb_build_object('title',regexp_replace(o.title,'(https?://[^ ]+|[[:alnum:]_.+-]+@[[:alnum:].-]+|@[[:alnum:]_]+|[+]?[0-9][0-9 ()-]{8,}[0-9])','[контакты удалены]','gi'),'description',regexp_replace(o.description,'(https?://[^ ]+|[[:alnum:]_.+-]+@[[:alnum:].-]+|@[[:alnum:]_]+|[+]?[0-9][0-9 ()-]{8,}[0-9])','[контакты удалены]','gi'),'price',o.client_price,'photo_ids',to_jsonb(o.photo_ids),'term',regexp_replace(o.term,'(https?://[^ ]+|[[:alnum:]_.+-]+@[[:alnum:].-]+|@[[:alnum:]_]+|[+]?[0-9][0-9 ()-]{8,}[0-9])','[контакты удалены]','gi'));
   end loop;
   select coalesce(max(number),0)+1 into num from public.request_offers where request_id=r.id;
   insert into public.request_offers(company_id,request_id,number,model,validation,option_ids,actor_id,letterhead_id)

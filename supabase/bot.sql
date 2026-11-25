@@ -41,6 +41,8 @@ create table if not exists public.bot_outbox (
  dedupe_key text unique, body jsonb not null, state text not null default 'pending' check(state in ('pending','sending','sent','failed','uncertain')),
  telegram_message_id bigint, error_code text,created_at timestamptz not null default now()
 );
+alter table public.bot_outbox add column if not exists message_id uuid references public.bot_messages(id);
+create unique index if not exists bot_outbox_message on public.bot_outbox(message_id) where message_id is not null;
 create index if not exists bot_jobs_pending on public.bot_jobs(state,lease_until,created_at);
 create index if not exists bot_threads_supplier on public.bot_threads(supplier_id);
 create index if not exists bot_threads_company on public.bot_threads(company_id);
@@ -94,7 +96,7 @@ begin
 end $$;
 create or replace function public.bot_confirm(p_actor bigint,p_id uuid,p_accept boolean)
 returns jsonb language plpgsql security invoker set search_path=public,pg_temp as $$
-declare a public.app_users%rowtype;q public.bot_proposals%rowtype;r public.crm_requests%rowtype;out jsonb;d jsonb;item jsonb;tid uuid;dest bigint;
+declare a public.app_users%rowtype;q public.bot_proposals%rowtype;r public.crm_requests%rowtype;out jsonb;d jsonb;item jsonb;tid uuid;dest bigint;queued integer:=0;mid uuid;
 begin
  select * into a from public.app_users where tg_id=p_actor and active and role in ('admin','owner','manager');if not found then raise exception 'crm_forbidden';end if;
  select * into q from public.bot_proposals where id=p_id and actor_id=p_actor and company_id=a.company_id for update;if not found then raise exception 'crm_not_found';end if;
@@ -136,11 +138,20 @@ begin
   for item in select value from jsonb_array_elements(d->'deliveries') loop
    dest:=(item->>'supplier_id')::bigint;
    if not exists(select 1 from public.app_users u join public.bot_supplier_profiles p on p.user_id=u.tg_id where u.tg_id=dest and u.active and u.role='supplier' and p.active and (d->>'brand')=any(p.brands)) then raise exception 'crm_bad_assignee';end if;
-   insert into public.bot_threads(company_id,request_id,supplier_id,code) values(a.company_id,r.id,dest,coalesce(item->>'code',substr(replace(gen_random_uuid()::text,'-',''),1,12))) on conflict(request_id,supplier_id) do update set request_id=excluded.request_id returning id into tid;
-   insert into public.bot_messages(thread_id,actor_id,sanitized_text,redactions) values(tid,p_actor,item->>'text',coalesce(item->'redactions','[]'));
-   insert into public.bot_outbox(chat_id,actor_id,thread_id,proposal_id,body) values(dest,p_actor,tid,q.id,jsonb_build_object('text',item->>'text','reply_markup',jsonb_build_object('inline_keyboard',jsonb_build_array(jsonb_build_array(jsonb_build_object('text','Открыть диалог','callback_data','thread:'||tid::text))))));
+   if q.action='reply_supplier' then
+    select id into tid from public.bot_threads where request_id=r.id and supplier_id=dest;
+    if not found then raise exception 'crm_not_found'; end if;
+   else
+    insert into public.bot_threads(company_id,request_id,supplier_id,code)
+    values(a.company_id,r.id,dest,coalesce(item->>'code',substr(replace(gen_random_uuid()::text,'-',''),1,12)))
+    on conflict(request_id,supplier_id) do nothing returning id into tid;
+    if not found then continue; end if;
+   end if;
+   queued:=queued+1;
+   insert into public.bot_messages(thread_id,actor_id,sanitized_text,redactions) values(tid,p_actor,item->>'text',coalesce(item->'redactions','[]')) returning id into mid;
+   insert into public.bot_outbox(chat_id,actor_id,thread_id,proposal_id,message_id,body) values(dest,p_actor,tid,q.id,mid,jsonb_build_object('text',item->>'text','reply_markup',jsonb_build_object('inline_keyboard',jsonb_build_array(jsonb_build_array(jsonb_build_object('text','Открыть диалог','callback_data','thread:'||tid::text))))));
   end loop;
-  out:=out||jsonb_build_object('queued',jsonb_array_length(d->'deliveries'));
+  out:=out||jsonb_build_object('queued',queued);
  end if;
  update public.bot_proposals set state='executed',result=out where id=q.id;
  return out;

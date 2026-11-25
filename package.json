@@ -13,7 +13,7 @@
     "test:domain": "node tests/domain-browser.cjs",
     "test:review": "node tests/review-browser.cjs",
     "test:contacts": "node tests/contacts-browser.cjs",
-    "test:bot": "node tests/bot-core.mjs && node tests/bot-runtime.cjs"
+    "test:bot": "node tests/bot-core.mjs && node tests/bot-runtime.cjs && node tests/workflow-core.mjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"

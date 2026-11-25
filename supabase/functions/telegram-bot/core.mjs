@@ -12,17 +12,42 @@ export class BotEngine{
   const m=u.message;if(!m)return;const original=m.text||m.caption||'';if(/^\/(start|help)(?:@\w+)?$/.test(original.trim())){await this.p.help(actor);return;}
   if(/^\/requests(?:@\w+)?$/.test(original.trim())){await this.p.requests(actor);return;}
   if(/^\/threads(?:@\w+)?$/.test(original.trim())){await this.p.threads(actor);return;}
-  if(actor.role==='supplier'&&!await this.p.hasThread(actor,m.reply_to_message?.message_id)){await this.p.threads(actor);return;}
+  if(m.voice){await this.p.notice(actor,'Пришлите сообщение текстом.');return;}
+  if(actor.role==='supplier'&&!await this.p.hasThread(actor,m.reply_to_message?.message_id,m.media_group_id)){await this.p.threads(actor);return;}
   if(actor.role!=='supplier'&&m.reply_to_message)await this.p.hasThread(actor,m.reply_to_message.message_id);
-  let text=original;if(m.voice){if(m.voice.duration>120||m.voice.file_size>8*1024*1024){await this.p.notice(actor,'Голосовое должно быть до 2 минут и до 8 МБ.');return;}text=job.transcript||await this.p.transcribe(m.voice);}
-  if(!text.trim()){await this.p.notice(actor,'Пришлите текст или голосовое. Фото и документы пока не распознаются автоматически.');return;}
-  await this.p.saveTranscript(job.id,actor,text);
-  if(actor.role==='supplier'){// Supplier input can never become an instruction to modify the dealer CRM.
-   const sanitized=await this.p.redact(text,actor);await this.p.supplierReply(actor,m.reply_to_message?.message_id,sanitized,job.id);return;
+  const text=original;
+  if(actor.role==='supplier' && (m.photo?.length||text.trim())){
+   const safe=text.trim()?await this.p.supplierText(text,actor):{text:'',removed:[]};
+   if(!safe){await this.p.notice(actor,'Пришлите ответ по образцу для выбранной модели. Описание можно добавить ответом на фото.\n\n'+structuredExample);if(!m.photo?.length)return;}
+   await this.p.supplierReply(actor,m,safe||{text:''},job.id);return;
   }
+  if(!text.trim()){await this.p.notice(actor,'Пришлите текст. Поставщик также может отправить фотографии автомобиля.');return;}
+  await this.p.saveTranscript(job.id,actor,text);
+  if(actor.role==='supplier')return;
   const intent=validateIntent(await this.p.understand(text,actor));
   if(intent.action==='unknown'){await this.p.notice(actor,intent.question||'Уточните действие: создать заявку, обновить, написать поставщику или собрать КП.');return;}
   await this.p.propose(actor,intent,text,job.id);
  }
 }
 export async function boundedBytes(response,max){if(!response.ok)throw Error('download_failed');if(Number(response.headers.get('content-length'))>max)throw Error('file_too_large');const reader=response.body.getReader(),chunks=[];let total=0;try{while(true){const {value,done}=await reader.read();if(done)break;total+=value.length;if(total>max)throw Error('file_too_large');chunks.push(value);}}finally{await reader.cancel().catch(()=>{});}const result=new Uint8Array(total);let at=0;for(const chunk of chunks){result.set(chunk,at);at+=chunk.length;}return result;}
+
+export const structuredExample='Год: 2022\nПробег: 35000 км\nЦена: 1800000 JPY\nСрок: 45 дней';
+export function structuredReply(text,model){
+ const fields={model}, lines=String(text).trim().split(/\r?\n/);
+ if(/^(нет в наличии|вариантов нет)[.!]?$/iu.test(text.trim()))return {text:'Вариантов нет',parsed:{}};
+ for(const line of lines){
+   const parts=line.trim().match(/^([^:]+):\s*(.+)$/u);
+   if(!parts)return null;
+   const key=parts[1].trim().toLowerCase(), value=parts[2].trim();
+   if(key==='модель'&&value.toLowerCase()===model.toLowerCase())continue;
+   if(key==='год'&&/^(19|20)\d\d$/.test(value)){fields.years=value;continue;}
+   if(key==='пробег'&&/^\d[\d ]{0,9}(?:\s*км)?$/iu.test(value)){fields.mileage=Number(value.replace(/[^\d]/g,''));continue;}
+   const price=value.match(/^(\d[\d ]{0,13}(?:[.,]\d{1,2})?)\s*(RUB|JPY|CNY|USD|EUR|₽)$/i);
+   if(key==='цена'&&price){fields.purchase=Number(price[1].replace(/ /g,'').replace(',','.'));fields.currency=price[2]==='₽'?'RUB':price[2].toUpperCase();continue;}
+   if(key==='срок'&&/^(в наличии|\d{1,3}(?:\s*-\s*\d{1,3})?\s*(?:дней|дня|день))$/iu.test(value)){fields.term=value;continue;}
+   return null;
+ }
+ if(!fields.purchase||!fields.currency)return null;
+ const safe=[model,fields.years&&'Год: '+fields.years,fields.mileage!=null&&'Пробег: '+fields.mileage+' км','Цена: '+fields.purchase+' '+fields.currency,fields.term&&'Срок: '+fields.term].filter(Boolean).join('\n');
+ return {text:safe,parsed:fields};
+}

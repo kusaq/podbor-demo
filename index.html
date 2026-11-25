@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="var(--background)">
 <title>Подбор</title>
-<meta name="podbor-version" content="2026-11-19-client-contacts-v1">
+<meta name="podbor-version" content="2026-11-25-supplier-workflow">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script defer src="assets/pdf-lib.min.js"></script>
 <script defer src="assets/fontkit.umd.min.js"></script>
@@ -628,8 +628,8 @@ function vLead() {
   var h = '<div class="scroll"><p class="cm">Поля со звёздочкой обязательны</p><div class="seg"><button class="' + (S.leadMode === 'quick' ? 'on' : '') + '" data-a="leadMode" data-v="quick">Быстрое поле</button><button class="' + (S.leadMode === 'form' ? 'on' : '') + '" data-a="leadMode" data-v="form">Форма</button></div>';
   if (S.leadMode === 'quick') h += '<div class="card"><label for="lt" class="lbl">Сообщение клиента</label><textarea id="lt" class="inp" data-in="leadText">' + esc(S.leadText) + '</textarea><span class="cm">Исходное сообщение сохранится в запросе. Заполните и проверьте поля ниже. Автоматический ИИ-разбор ещё не подключён.</span></div>';
   h += '<div class="card">' + requestField('fn', 'Имя клиента', 'fName', 'Имя клиента') + requestField('fp', 'Телефон', 'fPhone', '+7 900 000 00 00', 'tel') + '</div>';
-  h += '<div class="card">' + requestField('fm', 'Марка и модель', 'fModel', 'Toyota Camry') + requestField('fg', 'Поколение', 'fGeneration', 'XV70, либо уточнить') + requestField('fy', 'Годы', 'fYears', '2021-2023') + requestField('fk', 'Максимальный пробег, км', 'fMileage', '60000', 'number') + requestField('fb', 'Бюджет, ₽', 'fBudget', '3200000', 'number') + requestField('fc', 'Цвет и комплектация', 'fSpec', 'Белый, Prestige') + '</div>' + anketa();
-  h += '<button class="btn white sb" data-a="leadConsent" aria-pressed="' + !!S.fConsent + '">Согласие на обработку данных *<span>' + (S.fConsent ? 'Получено' : 'Не отмечено') + '</span></button><p class="cm">' + (online() ? 'Заявка сохраняется в общей CRM компании. Ответственным будете назначены вы.' : 'Вы в браузерном демо. Запрос сохранится только на этом устройстве.') + '</p><button class="btn b-acc" data-a="leadCreate">Создать запрос</button></div>';
+  h += '<div class="card">' + requestField('fm', 'Марка и модель', 'fModel', 'Toyota Camry') + requestField('fg', 'Поколение', 'fGeneration', 'XV70, либо уточнить') + requestField('fy', 'Годы', 'fYears', '2021-2023') + requestField('fk', 'Максимальный пробег, км', 'fMileage', '60000', 'number') + requestField('fb', 'Бюджет, ₽', 'fBudget', '3200000', 'number') + (online()?requestField('fc','Цвет для поставщика','fColor','Белый')+requestField('ftr','Комплектация для поставщика','fTrim','Prestige')+requestField('fbrand','Марка, если её нет в названии','fBrand','Toyota'):requestField('fc', 'Цвет и комплектация', 'fSpec', 'Белый, Prestige')) + '</div>' + anketa();
+  h += '<button class="btn white sb" data-a="leadConsent" aria-pressed="' + !!S.fConsent + '">Согласие на обработку данных *<span>' + (S.fConsent ? 'Получено' : 'Не отмечено') + '</span></button><p class="cm">' + (online() ? 'Запрос получат поставщики этой марки. Контакты и бюджет клиента останутся в CRM.' : 'Вы в браузерном демо. Запрос сохранится только на этом устройстве.') + '</p><button class="btn b-acc" data-a="leadCreate">Создать запрос</button></div>';
   return h;
 }
 function customKey() { return 'podbor-requests-v3-' + (S.me ? S.me.id : 'browser-demo'); }
@@ -652,7 +652,7 @@ function vRequest() {
   var c = S.cls[r.key];
   return '<div class="scroll"><div class="card"><h2>' + esc(r.title) + '</h2><span class="cm">' + esc(c.name) + '</span>' + clientStatusChip(r.key, true) + '<dl class="kv"><dt>Телефон</dt><dd>' + esc(c.phone || 'Не указан') + '</dd><dt>Поколение</dt><dd>' + esc(r.generation || 'Уточнить') + '</dd><dt>Годы</dt><dd>' + esc(r.years || 'Уточнить') + '</dd><dt>Пробег</dt><dd>' + esc(r.mileage || 'Уточнить') + '</dd><dt>Бюджет</dt><dd>' + (r.budget ? rub(r.budget) : 'Уточнить') + '</dd><dt>Пожелания</dt><dd>' + esc(r.spec || 'Не указаны') + '</dd><dt>Ответственный</dt><dd>' + esc(r.mgr || 'Не назначен') + '</dd>' + (r.nextContactAt ? '<dt>Следующий контакт</dt><dd>' + new Date(r.nextContactAt).toLocaleString('ru-RU') + '</dd>' : '') + '</dl></div>' +
     (r.sourceText ? '<div class="card"><b>Исходное сообщение</b><p style="white-space:pre-wrap">' + esc(r.sourceText) + '</p></div>' : '') +
-    (r.crmId ? realOptionsHtml(r.crmId) : '') + '<div class="card"><b>Источники поиска</b><p class="cm">Автоматический поиск пока не подключён. Варианты можно добавить вручную в десктопной CRM.</p></div></div>';
+    (r.crmId ? realOptionsHtml(r.crmId) : '') + '</div>';
 }
 
 function anketa() {
@@ -995,7 +995,7 @@ function vCabinets() {
   ];
   return '<div class="scroll"><button class="btn b-pri" data-a="go" data-v="desktopLogin">CRM и админка на компьютере</button><div class="card"><b>Рабочие кабинеты</b><p class="cm">Откройте рабочие заявки или управление доступом. Учебные примеры вынесены в отдельный режим внутри списка.</p></div>' + options.map(function (r) {
     return '<button class="card" style="border:0;text-align:left;font:inherit;cursor:pointer" data-a="viewCabinet" data-v="' + r[0] + '"><span class="row sb"><span class="row">' + ic(r[3]) + '<b>' + r[1] + '</b></span>' + ic('next') + '</span><span class="cm">' + r[2] + '</span></button>';
-  }).join('') + '<div class="card"><b>Сценарий по брифу v3</b><p class="cm">Лид → запрос → склад, поставщики и рынок → сравнение → цена и подтверждение → текст или КП → обратная связь.</p><span class="cm">CRM сохраняет заявки и варианты на сервере. Автоматический поиск, ИИ и рассылка поставщикам пока не подключены.</span></div></div>';
+  }).join('') + '<div class="card"><b>Сценарий по брифу v3</b><p class="cm">Лид → запрос → склад, поставщики и рынок → сравнение → цена и подтверждение → текст или КП → обратная связь.</p><span class="cm">CRM сохраняет заявки и варианты на сервере. Ответы поставщиков и состояние подключённых источников видны в рабочей заявке в разделе «Поставщики и КП».</span></div></div>';
 }
 function vMore() {
   var owner = S.role === 'owner';
@@ -1077,7 +1077,7 @@ function vSettings() {
   } else if (S.stab === 'team') {
     h += '<div class="card"><b>Команда</b><p class="cm">Участники и роли управляются через раздел доступов.</p><button class="btn b-pri" data-a="go" data-v="access">Открыть доступы</button><button class="btn" data-a="newUser">Добавить участника</button></div>';
   } else if (S.stab === 'api') {
-    h += '<div class="card"><b>Интеграции</b><p class="cm">CRM API, МойСклад, сервис объявлений, ИИ-разбор и рассылки пока не подключены. Действующих ключей CRM в приложении нет.</p></div>';
+    h += '<div class="card"><b>Интеграции</b><p class="cm">Состояние склада, объявлений и запросов поставщикам видно в рабочей заявке в разделе «Поставщики и КП».</p></div>';
   } else {
     h += S.log.map(function (l) {
       return '<div class="card" style="gap:4px"><div class="row sb"><span class="ct" style="font-size:14px">' + esc(l[0]) + '</span>' + chip(l[1], TONE[l[2]]) + '</div>' +
@@ -1593,8 +1593,18 @@ function realOptionsHtml(requestId) {
   var current = S.realRequestId === requestId; var options = current ? (S.realOptions || []).filter(function (o) { return !o.archived; }) : [];
   return '<div class="card"><div class="row sb"><b>Варианты из CRM</b><button class="btn b-sm" data-a="loadRealOptions" data-v="' + esc(requestId) + '">Обновить</button></div>' + (options.length ? options.map(function (o) {
     return '<div style="padding:12px 0;border-top:1px solid var(--border)"><b>' + esc(o.title) + '</b><div class="cm">Себестоимость ' + rub(o.total_cost) + '</div><div>Клиенту ' + rub(o.client_price) + '</div><span class="cm">' + (o.evaluation && o.evaluation.can_send ? 'Можно включать в КП' : 'Требуется согласование') + '</span></div>';
-  }).join('') : '<span class="cm">'+(S.realOptionsLoading?'Загружаем варианты…':current&&S.realOptionsError?'Не удалось загрузить варианты. Нажмите «Обновить».':current?'Вариантов пока нет. Добавьте их в CRM на компьютере.':'Обновите список вариантов.')+'</span>') + '<button class="btn white" data-a="go" data-v="desktopLogin">Открыть CRM на компьютере</button></div>';
+  }).join('') : '<span class="cm">'+(S.realOptionsLoading?'Загружаем варианты…':current&&S.realOptionsError?'Не удалось загрузить варианты. Нажмите «Обновить».':current?'Вариантов пока нет. Добавьте их в CRM на компьютере.':'Обновите список вариантов.')+'</span>') + '<button class="btn b-acc" data-a="openWorkCrm" data-v="'+esc(requestId)+'">Поставщики и КП</button><button class="btn white" data-a="go" data-v="desktopLogin">Открыть CRM на компьютере</button></div>';
 }
+A.openWorkCrm = async function(requestId) {
+  if(!online()||S.openingWorkCrm)return;
+  S.openingWorkCrm=true;
+  try {
+    var login=await call('desktop.code');
+    var session=await call('desktop.exchange',{code:login.code});
+    sessionStorage.setItem('podbor-desktop-session',JSON.stringify({token:session.sessionToken}));
+    location.assign('admin.html?request='+encodeURIComponent(requestId)+'&mini=1');
+  } catch(e){say(errText(e));} finally {S.openingWorkCrm=false;}
+};
 A.loadRealOptions = function (requestId) {
   if (!online()) return;
   var ticket = S.realOptionsTicket = (S.realOptionsTicket || 0) + 1; if(S.realRequestId !== requestId) S.realOptions = [];
@@ -1661,10 +1671,12 @@ A.leadCreate = function () {
   if (!Number.isFinite(Number(S.fBudget)) || Number(S.fBudget) <= 0) { say('Укажите бюджет больше нуля'); return; }
   if (!S.fConsent) { say('Подтвердите получение согласия клиента'); return; }
   S.creatingLead = true; say('Сохраняем заявку в CRM');
-  return call('crm.save', { data: { client_name: name, phone: phone, model: model, budget: Number(S.fBudget), generation: String(S.fGeneration || '').trim(), years: String(S.fYears || '').trim(), mileage: S.fMileage ? Number(S.fMileage) : null, spec: String(S.fSpec || '').trim(), source_text: S.leadMode === 'quick' ? S.leadText : '', city: S.fCity || '', purchase_time: S.fWhen || '', payment: S.pay, legal: S.legal, consent_at: new Date().toISOString() } }).then(function (j) {
+  S.createToken=S.createToken||crypto.randomUUID();
+  return call('crm.save', { token:S.createToken,search:{brand:S.fBrand||'',color:S.fColor||'',trim:S.fTrim||''},data: { client_name: name, phone: phone, model: model, budget: Number(S.fBudget), generation: String(S.fGeneration || '').trim(), years: String(S.fYears || '').trim(), mileage: S.fMileage ? Number(S.fMileage) : null, spec: [S.fColor,S.fTrim].filter(Boolean).join(', '), source_text: S.leadMode === 'quick' ? S.leadText : '', city: S.fCity || '', purchase_time: S.fWhen || '', payment: S.pay, legal: S.legal, consent_at: new Date().toISOString() } }).then(function (j) {
+    S.createToken=null;S.fColor='';S.fTrim='';S.fBrand='';S.fGeneration='';S.fYears='';S.fMileage='';S.leadText='';
     var key = mergeCrmRequest(j.request); S.crmTotal = (S.crmTotal || 0) + 1;
     S.fName = ''; S.fPhone = ''; S.fModel = ''; S.fBudget = ''; S.fConsent = false;
-    go('request', { requestKey: key }); say('Заявка сохранена в общей CRM');
+    go('request', { requestKey: key }); say('Заявка сохранена. Запросов в очереди: '+(j.queued||0));
   }).catch(function (e) { say(errText(e)); }).then(function () { S.creatingLead = false; render(); });
 };
 var originalStatusSave = A.stSave;

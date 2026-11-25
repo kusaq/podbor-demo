@@ -185,6 +185,21 @@ Deno.serve(async (req) => {
     if (result.error) return json({ error: 'desktop_db' }, 500);
     return json({ code: code.match(/.{4}/g)!.join('-'), expiresAt });
   }
+  if (action?.startsWith('workflow.')) {
+    if (!['admin','owner','manager'].includes(me.role)) return json({error:'crm_forbidden'},403);
+    const op=action.slice(9);
+    if (!['network','terms.save','policy.save','inbox','dispatch','photo','option.fromReply','reply','search.retry','listing.save'].includes(op)) return json({error:'backend_bad_action'},400);
+    if (JSON.stringify(p).length>20000) return json({error:'backend_bad_data'},400);
+    if (op==='reply') {
+      const detail=await db.rpc('crm_request_detail',{p_actor:myId,p_id:p.request_id});
+      if(detail.error) return crmError(detail.error);
+      const note=String(p.text||'').trim();
+      const names=[detail.data.request.client_name,me.name].filter(Boolean).map(x=>String(x).toLowerCase());
+      if (!note || note.length>2500 || names.some(n=>n.length>=3&&note.toLowerCase().includes(n)) || /https?:|www\.|t\.me\/|@|(?:\+\d[\d ()-]{8,}\d|\b[78](?:[ ()-]*\d){10}\b)/i.test(note)) return json({error:'backend_bad_data'},400);
+    }
+    const result=await db.rpc('crm_workflow',{p_actor:myId,p_action:op,p});
+    return result.error ? crmError(result.error) : json(result.data);
+  }
   if (action?.startsWith('backend.')) {
     const operation = action.slice('backend.'.length);
     const actions = ['settings.get','settings.save','asset.save','asset.get','request.get','option.save','option.review','option.archive','offer.create','offer.get','offer.sent'];
@@ -269,6 +284,11 @@ Deno.serve(async (req) => {
       if (id && (!/^[0-9a-f-]{36}$/i.test(id) || !Number.isSafeInteger(p.version) || Number(p.version) < 1)) return json({ error: 'crm_bad_data' }, 400);
       const data = crmData(p.data, !id);
       if (!data) return json({ error: 'crm_bad_data' }, 400);
+      if (!id && p.search) {
+        if(typeof p.token!=='string'|| !/^[0-9a-f-]{36}$/i.test(p.token) || typeof p.search.brand!=='string') return json({error:'backend_bad_data'},400);
+        const saved=await db.rpc('workflow_create',{p_actor:myId,p_token:p.token,p_data:data,p_search:p.search});
+        return saved.error ? crmError(saved.error) : json(saved.data);
+      }
       const result = await db.rpc('crm_save_request', { p_actor: myId, p_id: id, p_version: id ? Number(p.version) : 0, p_data: data });
       return result.error ? crmError(result.error) : json({ request: result.data });
     }

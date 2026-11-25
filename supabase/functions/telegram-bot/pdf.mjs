@@ -3,7 +3,7 @@ import fontkit from "npm:@pdf-lib/fontkit@1.1.1";
 import { FONT } from "./font.mjs";
 function clean(text) { return String(text || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim(); }
 function dataBytes(data) { return Uint8Array.from(atob(data.split(',')[1]), function (c) { return c.charCodeAt(0); }); }
-export async function createOffer(model) {
+export async function createOffer(model, loadPhoto) {
 
   var lib = PDFLib, doc = await lib.PDFDocument.create(); doc.registerFontkit(fontkit);
   var font = await doc.embedFont(dataBytes(FONT), { subset: true });
@@ -39,6 +39,14 @@ export async function createOffer(model) {
     var car = model.cars[i];
     await line((i + 1) + '. ' + car.title, 15, 3);
     await line(car.description, 11, 2);
+    for (const id of car.photo_ids || []) {
+      const photo = await doc.embedJpg(dataBytes(await loadPhoto(id)));
+      const size = photo.scaleToFit(width - 90, 180);
+      if (y - size.height < 95) await newPage();
+      y -= size.height;
+      page.drawImage(photo, {x:45,y,width:size.width,height:size.height});
+      y -= 14;
+    }
     await line(car.price.toLocaleString('ru-RU') + ' ₽ · ' + car.term, 13, 14);
   }
   await line('Цена действует до ' + new Date(model.validUntil).toLocaleDateString('ru-RU'), 11, 8);
