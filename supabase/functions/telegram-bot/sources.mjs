@@ -11,7 +11,12 @@ export async function searchSource(job, accounts, fetcher=fetch) {
   if (stock) {
     url.searchParams.set('filter','search='+model+';stockMode=positiveOnly');
     url.searchParams.set('limit','100');
-  } else url.searchParams.set('model',model);
+  } else {
+    url.searchParams.set('model',model);
+    for(const k of ["price_from","price_to","year_from","year_to","mileage_from","mileage_to","body","gearbox","fuel","drive","color"]){
+      const v=job.filters?.[k];if(v!=null&&v!=='')url.searchParams.set(k,String(v));
+    }
+  }
   const token=stock ? account.stock_token : account.market_token;
   const response=await fetcher(url,{headers:{Accept:'application/json','Accept-Encoding':'gzip',...(token?{Authorization:'Bearer '+token}:{})},redirect:'error',signal:AbortSignal.timeout(10000)});
   const payload=JSON.parse(new TextDecoder().decode(await boundedBytes(response,1500000)));
@@ -22,7 +27,7 @@ export async function searchSource(job, accounts, fetcher=fetch) {
     const purchase=stock?Number(row.price)/100:Number(row.price);
     if (!stock && !['RUB','CNY','JPY','USD','EUR'].includes(row.currency||'RUB')) continue;
     const vehicle={};
-    for(const k of ['generation','year','mileage','color','trim']){
+    for(const k of ['generation','year','mileage','color','trim','body','gearbox','fuel','drive']){
       const v=row[k];if((typeof v==='string'||typeof v==='number')&&String(v).length<=80&&String(v).trim())vehicle[k]=v;
     }
     const phone=String(row.phone||'').replace(/[ ()-]/g,'');

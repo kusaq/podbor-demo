@@ -36,9 +36,10 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     const title='<div class="heading"><h1 class="page-title">Поставщики</h1>'+action('network','Обновить')+'</div>';
     if(!network)return title+alert+'<p class="muted">Загрузка сети поставщиков…</p>';
     return title+alert+'<div class="supplier-layout"><section class="surface detail-body"><h2 class="section-title">Сеть поставщиков</h2>'+
-      ((network.suppliers||[]).map(s=>'<button type="button" class="supplier-row" data-flow="pick" data-value="'+esc(s.id)+'" aria-pressed="'+(String(s.id)===selected)+'"><b>'+esc(s.name)+'</b><small>'+esc((s.brands||[]).join(', ')||'Марки не указаны')+'</small><small>'+(!s.active?'Доступ отключён':s.enabled?'Принимает запросы':'Рассылка выключена')+'</small></button>').join('')||'<p>Добавьте участника с ролью «Поставщик» в разделе «Команда».</p>')+
+      ((network.suppliers||[]).map(s=>'<button type="button" class="supplier-row" data-flow="pick" data-value="'+esc(s.id)+'" aria-pressed="'+(String(s.id)===selected)+'"><b>'+esc(s.name)+'</b><small>'+esc((s.brands||[]).join(', ')||'Марки не указаны')+'</small><small>'+(!s.active?'Доступ отключён':s.enabled&&s.routing_enabled!==false?'Принимает запросы':'Рассылка выключена')+'</small></button>').join('')||'<p>Добавьте участника с ролью «Поставщик» в разделе «Команда».</p>')+
       '</section><section class="surface detail-body">'+(d?'<form id="wf-terms"><h2 class="section-title">'+esc(d.name)+'</h2><fieldset class="fields">'+
       (d.owned?input('brands','Марки через запятую',d.brands)+'<label class="check field"><input data-wf="enabled" type="checkbox" '+(d.enabled?'checked':'')+'>Получает запросы</label>':'')+
+      '<label class="check field"><input data-wf="routing_enabled" type="checkbox" '+(d.routing_enabled!==false?'checked':'')+'>Включить в рассылки этого салона</label>'+
       '<label class="field">Валюта закупки<select data-wf="currency">'+currencies.map(c=>'<option '+(c===d.currency?'selected':'')+'>'+c+'</option>').join('')+'</select></label>'+
       Object.entries(fees).map(([k,label])=>input(k,label+', ₽',d.fees[k]??0,'number','min="0" max="1000000000" step="0.01" required')).join('')+'</fieldset><p class="footnote">Суммы подставляются в новые расчёты этого поставщика. Менеджер проверяет расходы и курс перед сохранением варианта.</p><button class="btn primary">Сохранить тариф</button></form>':'<p>Выберите поставщика для настройки тарифов.</p>')+'</section></div>'+
       (p?'<form id="wf-policy" class="surface detail-body"><h2 class="section-title">Сроки напоминаний</h2><fieldset class="fields">'+input('supplier_hours','Поставщику, часов',p.supplier_hours,'number','min="1" max="168" required')+input('escalation_hours','Ответственному менеджеру, часов',p.escalation_hours,'number','min="1" max="336" required')+input('client_days','После отправки КП, дней',p.client_days,'number','min="1" max="30" required')+'</fieldset>'+(network.manager_flow?'<h3>Допуски при сравнении с заявкой</h3><fieldset class="fields">'+input('year_slack','Отклонение по году, лет',p.year_slack??0,'number','min="0" max="10" required')+input('km_slack','Превышение пробега, км',p.km_slack??0,'number','min="0" max="1000000" required')+input('budget_pct','Превышение бюджета, %',p.budget_pct??0,'number','min="0" max="100" step="0.1" required')+'</fieldset>':'')+'<button class="btn">Сохранить сроки</button></form>':'');
@@ -65,7 +66,7 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     const v=formValues;
     const writable=!request()?.archived_at&&['search','think'].includes(request()?.status);
     const search='<details class="domain-box"><summary>Параметры запроса поставщикам</summary><form id="wf-dispatch"><div class="fields">'+
-      input('brand','Марка',v.brand??spec.brand??'')+input('color','Цвет',v.color??spec.color)+input('trim','Комплектация',v.trim??spec.trim)+'</div><p class="footnote">Запрос получат только новые подходящие поставщики. Уже открытые диалоги сохранятся.</p><button class="btn small">Найти поставщиков</button></form></details>';
+      input('brand','Марка',v.brand??spec.brand??'')+input('color','Цвет',v.color??spec.color)+input('trim','Комплектация',v.trim??spec.trim)+'</div><p class="footnote">Запрос получат только новые подходящие поставщики. Уже открытые диалоги сохранятся.</p><button class="btn small">Выбрать получателей</button></form></details>';
     const channels=[...(inbox.sources||[])];if(inbox.listings?.length)channels.push({source:'manual',state:'ready',results:inbox.listings});
     const sources=channels.map(s=>'<div class="domain-box"><b>'+(s.source==='stock'?'МойСклад':s.source==='manual'?'Сохранённые объявления':'Объявления')+'</b><span class="sub">'+esc(states[s.state]||s.state)+(s.state==='ready'?' · '+s.results.length:'')+'</span>'+
       (s.results||[]).map((r,i)=>'<div class="row between"><span>'+esc(r.title)+' · '+esc(r.purchase??'Цена по запросу')+' '+esc(r.currency)+(r.link&&/^https:\/\//i.test(r.link)?' · <a target="_blank" rel="noreferrer" href="'+esc(r.link)+'">Объявление</a>':'')+'</span>'+action('source','В расчёт',s.source+':'+i)+'</div>').join('')+'</div>').join('');
@@ -83,21 +84,57 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     const sourcePanel='<details class="domain-box"><summary>МойСклад, Авто.ру и Авито</summary>'+sources+(writable?action('retry','Обновить поиск')+
       '<div class="row wrap"><a class="btn small ghost" target="_blank" rel="noreferrer" href="https://auto.ru/cars/all/">Открыть Авто.ру</a><a class="btn small ghost" target="_blank" rel="noreferrer" href="https://www.avito.ru/rossiya/avtomobili?q='+encodeURIComponent(request()?.model||'')+'">Найти на Авито</a></div><form id="wf-listing"><h4>Добавить объявление по ссылке</h4>'+input('listingUrl','Ссылка на объявление',v.listingUrl,'url','required')+input('listingTitle','Автомобиль',v.listingTitle,'text','required')+input('listingPrice','Цена объявления, ₽',v.listingPrice,'number','min="1"')+listingFields(v)+'<button class="btn small">Сохранить объявление</button></form>':'')+'</details>';
     const answered=threads.filter(t=>t.messages?.some(m=>m.incoming)).length;
-    return orderHtml(inbox.order)+selection+feedback+(inbox.manager_flow?window.PodborLots.comparison(request()||{},inbox,domain().options()):'')+sourcePanel+(inbox.manager_flow?window.PodborLots.callQueue(inbox.listings,writable):'')+'<section class="wf-inbox"><div class="row between"><h3>Ответили '+answered+' из '+threads.length+'</h3>'+action('refresh','Обновить ответы')+'</div>'+alert+(writable?search:'')+
+    const filterPanel=inbox.lot_media&&writable?'<details class="domain-box"><summary>Фильтры подбора'+(Object.keys(spec.filters||{}).length?' · '+Object.keys(spec.filters).length:'')+'</summary><form id="wf-filters"><div class="lot-filter-fields">'+window.PodborLotTools.inputs(spec.filters)+'</div><button class="btn small" type="submit">Применить фильтры</button></form></details>':'';
+    return orderHtml(inbox.order)+selection+feedback+filterPanel+(inbox.manager_flow?window.PodborLots.comparison(request()||{},inbox,domain().options()):'')+sourcePanel+(inbox.manager_flow?window.PodborLots.callQueue(inbox.listings,writable):'')+'<section class="wf-inbox"><div class="row between"><h3>Ответили '+answered+' из '+threads.length+'</h3>'+action('refresh','Обновить ответы')+'</div>'+alert+(writable?search:'')+
       (threads.length?'<label class="field">Диалог<select data-wf="thread">'+threads.map(t=>'<option value="'+esc(t.id)+'" '+(t.id===thread?'selected':'')+'>'+esc(t.name)+' · '+esc(t.code)+'</option>').join('')+'</select></label>':'<p class="footnote">Диалогов пока нет. Проверьте марку и включённые профили поставщиков.</p>')+
       (t?'<p class="footnote">Первый запрос · '+esc(states[t.delivery]||'Подготовлен')+'</p><ol class="wf-log">'+messages+'</ol>'+(writable?'<form id="wf-reply"><label class="field">Ответ через бота<textarea data-wf="reply" required maxlength="2500" placeholder="Уточните состояние, цену или срок">'+esc(v.reply||'')+'</textarea></label><button class="btn small">Отправить поставщику</button></form>':''):'')+
       '</section>';
   }
   function photoPicker(d){
-    if(!d.candidates?.length)return '';
-    return '<div class="field full"><b>Фото для клиента</b><span class="footnote">Отметьте просмотренные снимки без контактов и водяных знаков поставщика.</span><div class="wf-photos">'+
-      d.candidates.map(key=>{const src=images.get(key);return src?'<label><img alt="Фото автомобиля" src="'+esc(src)+'"><span><input type="checkbox" data-wf-photo="'+esc(key)+'" '+(d.photos.includes(key)?'checked':'')+'> Включить в КП</span></label>':action('photo','Показать фото',key);}).join('')+'</div></div>';
+    const upload=inbox?.lot_media?'<div class="lot-drop"><label>Добавить фото<input type="file" accept="image/*" multiple data-upload-photos></label><small>Можно выбрать несколько снимков или перетащить их сюда. До 10 фото в КП.</small><span role="status" data-upload-status></span></div>':'';
+    const candidates=[...new Set([...(d.candidates||[]),...(d.photo_ids||[]),...(d.uploads||[]).map(x=>x.id)])];
+    if(!candidates.length&&!upload)return '';
+    return '<div class="field full"><b>Фото для клиента</b><span class="footnote">Отметьте просмотренные снимки без контактов и водяных знаков поставщика.</span>'+upload+'<div class="wf-photos">'+
+      candidates.map(key=>{const src=d.uploads?.find(x=>x.id===key)?.src||images.get(key);return src?'<label><img alt="Фото автомобиля" src="'+esc(src)+'"><span><input type="checkbox" data-wf-photo="'+esc(key)+'" '+((d.photos||d.photo_ids||[]).includes(key)?'checked':'')+'> Включить в КП</span></label>':action('photo','Показать фото',key);}).join('')+'</div></div>';
+  }
+  async function addPhotos(files){
+    const d=domain().getDraft();if(!d||!files?.length||d.loadingPhotos)return;
+    d.loadingPhotos=true;const status=root.querySelector('[data-upload-status]');let errorText='';
+    try{
+      const current=d.photos||d.photo_ids||[];if(current.length+files.length>10)throw Error('Можно выбрать до 10 фото. Снимите отметки с лишних.');
+      if(status)status.textContent='Подготовка фото…';
+      const items=[];for(const f of files)items.push(await window.PodborLotTools.imageFile(f));
+      if(domain().getDraft()!==d)return;
+      d.uploads=[...(d.uploads||[]).filter(x=>current.includes(x.id)),...items];d.photos=[...current,...items.map(x=>x.id)];domain().markDirty();
+    }catch(e){errorText=e.name==='EncodingError'?'Браузер не открыл этот снимок. Выберите JPEG, PNG или WebP.':e.message;}
+    finally{d.loadingPhotos=false;if(domain().getDraft()===d){render();if(errorText)flash(errorText);}}
+  }
+  root.addEventListener('change',e=>{if(e.target.matches('[data-upload-photos]'))addPhotos([...e.target.files]);});
+  root.addEventListener('dragover',e=>{if(e.target.closest('.lot-drop'))e.preventDefault();});
+  root.addEventListener('drop',e=>{if(e.target.closest('.lot-drop')){e.preventDefault();addPhotos([...e.dataTransfer.files]);}});
+  async function savePhotos(d,option){
+    if(!inbox?.lot_media)return false;
+    const photos=d.photos||d.photo_ids||[],uploads=(d.uploads||[]).filter(x=>photos.includes(x.id)).map(x=>({id:x.id,jpeg:x.src.split(',')[1]}));
+    if(!photos.length&&!d.photo_ids?.length&&!d.message_id)return false;
+    const fields={request_id:id,option,message_id:d.message_id||null,terms_revision:d.terms_revision||0,photos};
+    const key=JSON.stringify(fields);if(d.photoWriteKey!==key){d.photoWriteKey=key;d.photoToken=crypto.randomUUID();}
+    await op('option.withPhotos',{...fields,uploads,token:d.photoToken});return true;
+  }
+  async function previewPhotos(d){
+    const current=id,keys=[...new Set([...(d.candidates||[]),...(d.photo_ids||[])])].filter(key=>!images.has(key)).slice(0,10);
+    for(let i=0;i<keys.length;i+=3){
+      if(current!==id||domain().getDraft()!==d)return;
+      await Promise.all(keys.slice(i,i+3).map(async key=>{
+        try{const photo=await op('photo',{request_id:current,id:key});if(current===id)images.set(key,photo.data);}catch{/* The thumbnail button allows a retry. */}
+      }));
+    }
+    if(keys.length&&current===id&&domain().getDraft()===d)render();
   }
   function draftFrom(t,m){
     const f=m.parsed||{},terms=t.terms||{},currency=f.currency||terms.currency||'RUB';
-    const photos=[...new Set([...(m.photos||[]),...t.messages.filter(x=>x.incoming&&!x.option_id&&!x.text).flatMap(x=>x.photos||[])])];
+    const photos=m.photos||[];
     return {message_id:m.id,terms_revision:terms.revision||0,title:f.model||'',description:[f.years,f.mileage!=null?f.mileage+' км':'',f.spec].filter(Boolean).join(', '),
-      purchase:f.purchase||'',term:f.term||'',currency,scenario:currency==='RUB'?'rf':'import',base_rate:currency==='RUB'?1:'',...(f.quote_mode==='turnkey'?{}:terms.fees),...Object.fromEntries(Object.keys(fees).filter(k=>f[k]!=null).map(k=>[k,f[k]])),quote_mode:f.quote_mode||'itemized',vehicle:{year:f.years,mileage:f.mileage,generation:f.generation,color:f.color,trim:f.trim},photos:[],candidates:photos,source_name:'Запрос '+t.code};
+      purchase:f.purchase||'',term:f.term||'',currency,scenario:currency==='RUB'?'rf':'import',base_rate:currency==='RUB'?1:'',...(f.quote_mode==='turnkey'?{}:terms.fees),...Object.fromEntries(Object.keys(fees).filter(k=>f[k]!=null).map(k=>[k,f[k]])),quote_mode:f.quote_mode||'itemized',vehicle:{year:f.years,mileage:f.mileage,generation:f.generation,color:f.color,trim:f.trim,body:f.body,gearbox:f.gearbox,fuel:f.fuel,drive:f.drive},photos:[],candidates:photos,source_name:'Запрос '+t.code};
   }
   async function run(fn){
     if(busy||isBusy()||domain().isBusy())return;
@@ -116,7 +153,8 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
   });
   root.addEventListener('change',event=>{
     const el=event.target;
-    if(el.dataset.wfPhoto){const d=domain().getDraft();if(!d)return;d.photos=el.checked?[...new Set([...d.photos,el.dataset.wfPhoto])]:d.photos.filter(x=>x!==el.dataset.wfPhoto);return;}
+    if(el.matches('[data-show-outside]')){el.closest('#lot-comparison').classList.toggle('show-all-lots',el.checked);return;}
+    if(el.dataset.wfPhoto){const d=domain().getDraft();if(!d)return;const current=d.photos||d.photo_ids||[];if(el.checked&&current.length>=10){el.checked=false;flash('В КП можно включить до 10 фото');return;}d.photos=el.checked?[...new Set([...current,el.dataset.wfPhoto])]:current.filter(x=>x!==el.dataset.wfPhoto);domain().markDirty();return;}
     if(el.dataset.wf==='outcome'){formValues.outcome=el.value;render();return;}
     if(el.dataset.wf==='thread'){if(formValues.reply?.trim()&&!confirm('Закрыть черновик ответа?')){el.value=thread;return;}thread=el.value;delete formValues.reply;delete tokens.reply;render();}
   });
@@ -135,7 +173,7 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
         const [name,index]=val.split(':');const row=name==='manual'?inbox.listings?.[index]:inbox.sources.find(s=>s.source===name)?.results[index];
         if(row)draft={title:row.title,quote_mode:row.quote_mode||'itemized',vehicle:{...row.vehicle,listing_url:row.link||undefined},purchase:row.calls?.find(c=>c.actual_price!=null)?.actual_price??row.purchase??'',term:row.term,currency:row.currency,scenario:row.currency==='RUB'?'rf':'import',base_rate:row.currency==='RUB'?1:'',source_name:name==='stock'?'МойСклад':String(row.link||'Объявление').slice(0,200),client_price:''};
       }
-      if(draft&&domain().startDraft(draft))requestAnimationFrame(()=>document.querySelector('#domainOptionForm')?.scrollIntoView({block:'start'}));
+      if(draft&&domain().startDraft(draft)){previewPhotos(domain().getDraft());requestAnimationFrame(()=>document.querySelector('#domainOptionForm')?.scrollIntoView({block:'start'}));}
     });
   });
   root.addEventListener('submit',event=>{
@@ -146,12 +184,17 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
         catch(e){flash(formatError(e));}finally{busy=false;button.disabled=false;}})();return;
     }if(!form.id.startsWith('wf-'))return;event.preventDefault();
     run(async()=>{
+      if(form.id==='wf-filters'){
+        const f=window.PodborLotTools.values(form);if(!window.PodborLotTools.ranges(f)){flash('Проверьте границы диапазонов');return;}
+        const s=inbox.spec||{};await op('dispatch',{request_id:id,brand:s.brand||'',color:s.color||'',trim:s.trim||'',filters:f,recipients:[]});
+        await refresh();flash('Фильтры сохранены');return;
+      }
       if(form.id==='wf-policy'){
         const p=policyDraft;if(+p.escalation_hours<+p.supplier_hours){flash('Срок уведомления менеджера должен быть не меньше срока поставщика');return;}
         await op('policy.save',p);await networkLoad();flash('Сроки сохранены');return;
       }
       if(form.id==='wf-terms'){
-        const d=networkDraft;await op('terms.save',{id:d.id,revision:d.revision,enabled:d.enabled,currency:d.currency,
+        const d=networkDraft;await op('terms.save',{id:d.id,revision:d.revision,enabled:d.enabled,routing_enabled:d.routing_enabled!==false,currency:d.currency,
           brands:d.brands.split(',').map(s=>s.trim()).filter(Boolean),fees:Object.fromEntries(Object.keys(fees).map(k=>[k,Number(d.fees[k]||0)]))});
         await networkLoad();flash('Тариф сохранён');return;
       }
@@ -185,12 +228,15 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
       }
       if(form.id==='wf-dispatch'){
         const spec=inbox.spec||{};
-        const j=await op('dispatch',{request_id:id,brand:formValues.brand??spec.brand??'',color:formValues.color??spec.color??'',trim:formValues.trim??spec.trim??''});flash('Новых запросов в очереди: '+j.queued);
+        const q={request_id:id,model:request()?.model,brand:formValues.brand??spec.brand??'',color:formValues.color??spec.color??'',trim:formValues.trim??spec.trim??'',filters:spec.filters||{}};
+        const picked=await window.PodborLotTools.route(api,q,false);if(!picked)return;
+        const j=await op('dispatch',{...q,...picked});flash('Новых запросов в очереди: '+j.queued);
       }
       edited=false;await refresh();
     });
   });
   function existingPhotos(d){
+    queueMicrotask(()=>{const draft=domain().getDraft();if(draft)previewPhotos(draft);});
     if(!d.id||!inbox)return d;
     for(const t of inbox.threads||[]){
       const m=t.messages.find(m=>m.option_id===d.id);if(!m)continue;
@@ -198,5 +244,5 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     }
     return d;
   }
-  return {extended:()=>!!inbox?.manager_flow,reset,load,networkLoad,networkHtml,inboxHtml,photoPicker,existingPhotos,dirty:()=>edited,busy:()=>busy};
+  return {savePhotos,extended:()=>!!inbox?.manager_flow,reset,load,networkLoad,networkHtml,inboxHtml,photoPicker,existingPhotos,dirty:()=>edited,busy:()=>busy};
 };

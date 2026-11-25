@@ -13,7 +13,7 @@ const accounts={dealer:{stock_token:'test-secret',market_url:'https://feed.test/
 assert.deepEqual(await searchSource({...stock,company:'other'},accounts,()=>assert.fail()),{state:'unconfigured',results:[]});
 let result=await searchSource(stock,accounts,async(url,o)=>{assert.equal(url.hostname,'api.moysklad.ru');assert.equal(url.searchParams.get('filter'),'search=Toyota Camry;stockMode=positiveOnly');assert.equal(o.headers.Authorization,'Bearer test-secret');return Response.json({rows:[{name:m,stock:1,reserve:0,price:200000000},{name:'Reserved',stock:1,reserve:1,price:500}]});});
 assert.equal(result.results.length,1);assert.equal(result.results[0].purchase,2000000);
-result=await searchSource({...stock,source:'market'},accounts,async(url,o)=>{assert.equal(url.searchParams.get('model'),m);assert.equal(o.headers.Authorization,'Bearer feed-secret');return Response.json({rows:[{name:m,price:2800000,url:'https://example.test/a'}]});});
+result=await searchSource({...stock,source:'market',filters:{year_from:2021,gearbox:'Автомат'}},accounts,async(url,o)=>{assert.equal(url.searchParams.get('model'),m);assert.equal(url.searchParams.get('year_from'),'2021');assert.equal(url.searchParams.get('gearbox'),'Автомат');assert.equal(url.searchParams.has('fuel'),false);assert.equal(o.headers.Authorization,'Bearer feed-secret');return Response.json({rows:[{name:m,price:2800000,url:'https://example.test/a'}]});});
 assert.equal(result.results[0].link,'https://example.test/a');
 await assert.rejects(()=>searchSource(stock,accounts,async()=>Response.json({}, {status:503})));
 console.log('PASS structured text, private photo fallback, stock quantities and units, per-dealer credentials, listing feed and failures');

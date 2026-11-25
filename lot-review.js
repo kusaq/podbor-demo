@@ -4,14 +4,14 @@ window.PodborLots=(()=>{
   const number=v=>Number(v).toLocaleString('ru-RU');
   const stamp=v=>new Date(v).toLocaleString('ru-RU',{dateStyle:'short',timeStyle:'short'});
   const results={fit:'Подходит',reject:'Не подходит',retry:'Перезвонить'};
-  const attrs={generation:'Поколение',year:'Год',mileage:'Пробег, км',color:'Цвет',trim:'Комплектация'};
+  const attrs={generation:'Поколение',year:'Год',mileage:'Пробег, км',color:'Цвет',trim:'Комплектация',body:'Кузов',fuel:'Топливо',gearbox:'Коробка',drive:'Привод'};
   function compare(request,spec,tolerance,candidate){
     const norm=x=>String(x??'').trim().toLowerCase().replace(/ё/g,'е');
     const vehicle=candidate.vehicle||{},checks=[];
     const constrained=x=>x!=null&&String(x).trim()!==''&&!/^(любо[йея]|без ограничений|не (указан[оаы]?|важно))$/i.test(norm(x));
     function record(label,wanted,actual,match){
       if(!constrained(wanted))return;
-      checks.push({label,actual:actual==null||actual===''?'Уточнить':String(actual),wanted:String(wanted),state:actual==null||actual===''?'unknown':match?'ok':'diff'});
+      checks.push({label,actual:actual==null||actual===''?'Не указано':String(actual),wanted:String(wanted),state:actual==null||actual===''?'unknown':match?'ok':'diff'});
     }
     for(const k of ['generation','color','trim']){
       const requested=k==='generation'?request.generation:spec[k];
@@ -25,27 +25,31 @@ window.PodborLots=(()=>{
     }
     if(request.mileage!=null)record('Пробег, км','до '+number(request.mileage),vehicle.mileage!=null&&vehicle.mileage!==''?number(vehicle.mileage):null,Number(vehicle.mileage)<=Number(request.mileage)+(Number(tolerance.km)||0));
     if(request.budget)record('Цена клиенту','до '+number(request.budget)+' ₽',candidate.client_price?number(candidate.client_price)+' ₽':null,Number(candidate.client_price)<=Number(request.budget)*(1+Number(tolerance.pct||0)/100));
+    for(const k of ['body','gearbox','fuel','drive'])record(attrs[k],spec.filters?.[k],vehicle[k],norm(spec.filters?.[k])===norm(vehicle[k]));
     return checks;
   }
   function comparison(r,inbox,options){
-    const candidates=options.filter(o=>!o.archived).map(o=>({title:o.title,source:o.source_name,cost:number(o.total_cost)+' ₽',client_price:o.client_price,vehicle:o.input?.vehicle}));
-    for(const l of inbox.listings||[]){if(!options.some(o=>!o.archived&&(o.input?.vehicle?.listing_url||o.source_name)===l.link))candidates.push({title:l.title,source:'Объявление',cost:l.purchase?number(l.purchase)+' '+l.currency:null,vehicle:l.vehicle});}
+    const candidates=options.filter(o=>!o.archived).map(o=>({title:o.title,source:o.source_name,price:o.client_price,cost:number(o.total_cost)+' ₽',client_price:o.client_price,vehicle:o.input?.vehicle}));
+    for(const l of inbox.listings||[]){if(!options.some(o=>!o.archived&&(o.input?.vehicle?.listing_url||o.source_name)===l.link))candidates.push({title:l.title,source:'Объявление',price:l.currency==='RUB'?l.purchase:null,cost:l.purchase?number(l.purchase)+' '+l.currency:null,vehicle:l.vehicle});}
     for(const s of inbox.sources||[])for(const l of s.results||[]){
       if(s.source==='market'&&(inbox.listings||[]).some(x=>x.link===l.link))continue;
-      candidates.push({title:l.title,source:s.source==='stock'?'МойСклад':'Объявление',cost:l.purchase?number(l.purchase)+' '+l.currency:null,vehicle:l.vehicle});}
+      candidates.push({title:l.title,source:s.source==='stock'?'МойСклад':'Объявление',price:l.currency==='RUB'?l.purchase:null,cost:l.purchase?number(l.purchase)+' '+l.currency:null,vehicle:l.vehicle});}
     for(const t of inbox.threads||[])for(const m of t.messages||[]){
       const f=m.parsed;if(!m.incoming||m.option_id||!f?.purchase)continue;
-      candidates.push({title:f.model||r.model,source:t.name,cost:number(f.purchase)+' '+(f.currency||''),vehicle:{...f,year:f.years}});
+      candidates.push({title:f.model||r.model,source:t.name,price:f.currency==='RUB'?f.purchase:null,cost:number(f.purchase)+' '+(f.currency||''),vehicle:{...f,year:f.years}});
     }
     if(!candidates.length)return '';
     const tol=inbox.tolerances||{};
+    const filters=inbox.spec?.filters||{},limited=Object.keys(filters).length>0;
+    let matched=0;
     const cards=candidates.map(c=>{
+      const fits=window.PodborLotTools.matches(c,filters);if(fits)matched++;
       let source=c.source||'Ручной подбор';if(/^https:\/\//i.test(source)){try{source=new URL(source).hostname.replace(/^www\./,'');}catch{source='Объявление';}}
       const checks=compare(r,inbox.spec||{},tol,c);
       const group=checks.find(x=>x.label==='Поколение'&&x.state==='diff')?'Другое поколение':checks.some(x=>x.state==='diff')?'Есть отклонения':checks.some(x=>x.state==='unknown')?'Нужно уточнить':'По заданным параметрам подходит';
-      return '<article class="lot-compare"><strong>'+esc(c.title)+'</strong><small>'+esc(source)+'</small><p>'+esc(group)+'</p><dl><div><dt>Расчёт источника / себестоимость</dt><dd>'+esc(c.cost||'Уточнить')+'</dd></div>'+checks.map(x=>'<div><dt>'+esc(x.label)+'</dt><dd>'+esc(x.actual)+(x.state==='diff'?' · в заявке '+esc(x.wanted):'')+'</dd></div>').join('')+'</dl></article>';
+      return '<article class="lot-compare" '+(!fits?'data-outside-filter':'')+'><strong>'+esc(c.title)+'</strong><small>'+esc(source)+'</small><p>'+esc(group)+'</p><dl><div><dt>Расчёт источника / себестоимость</dt><dd>'+esc(c.cost||'Уточнить')+'</dd></div>'+checks.map(x=>'<div><dt>'+esc(x.label)+'</dt><dd>'+esc(x.actual)+(x.state==='diff'?' · в заявке '+esc(x.wanted):'')+'</dd></div>').join('')+'</dl></article>';
     });
-    return '<details class="domain-box" id="lot-comparison"><summary>Сравнение лотов · '+cards.length+'</summary><p class="footnote">Допуски салона: год ±'+esc(tol.years||0)+', пробег +'+esc(tol.km||0)+' км, бюджет +'+esc(tol.pct||0)+'%.</p><div class="lot-grid">'+cards.join('')+'</div></details>';
+    return '<details class="domain-box" id="lot-comparison"><summary>Сравнение лотов · '+cards.length+'</summary><p class="footnote">Допуски салона: год ±'+esc(tol.years||0)+', пробег +'+esc(tol.km||0)+' км, бюджет +'+esc(tol.pct||0)+'%.</p>'+(limited?'<label class="check"><input type="checkbox" data-show-outside> Показать также остальные лоты ('+(cards.length-matched)+')</label><p class="footnote">По фильтрам: '+matched+' из '+cards.length+'. Для цены сравниваются рублёвые предложения и цены клиенту.</p>':'')+'<div class="lot-grid">'+cards.join('')+'</div></details>';
   }
   function callQueue(list,writable=true){
     if(!list?.length)return '';

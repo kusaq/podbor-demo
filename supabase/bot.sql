@@ -137,7 +137,9 @@ begin
  if q.action in ('send_supplier_request','reply_supplier','create_request') and jsonb_array_length(coalesce(d->'deliveries','[]'))>0 then
   for item in select value from jsonb_array_elements(d->'deliveries') loop
    dest:=(item->>'supplier_id')::bigint;
-   if not exists(select 1 from public.app_users u join public.bot_supplier_profiles p on p.user_id=u.tg_id where u.tg_id=dest and u.active and u.role='supplier' and p.active and (d->>'brand')=any(p.brands)) then raise exception 'crm_bad_assignee';end if;
+   if q.action<>'reply_supplier' and to_regprocedure('public.workflow_routes(uuid,text)') is not null then
+    if not exists(select 1 from public.workflow_routes(r.company_id,d->>'brand') w where w.supplier=dest) then raise exception 'crm_bad_assignee';end if;
+   elsif not exists(select 1 from public.app_users u join public.bot_supplier_profiles p on p.user_id=u.tg_id where u.tg_id=dest and u.active and u.role='supplier' and p.active and (d->>'brand')=any(p.brands)) then raise exception 'crm_bad_assignee';end if;
    if q.action='reply_supplier' then
     select id into tid from public.bot_threads where request_id=r.id and supplier_id=dest;
     if not found then raise exception 'crm_not_found'; end if;

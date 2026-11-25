@@ -1,3 +1,79 @@
+const filterSpec={
+ "price_from": [
+  "Цена от, ₽",
+  0,
+  100000000000
+ ],
+ "price_to": [
+  "Цена до, ₽",
+  0,
+  100000000000
+ ],
+ "year_from": [
+  "Год от",
+  1900,
+  2100
+ ],
+ "year_to": [
+  "Год до",
+  1900,
+  2100
+ ],
+ "mileage_from": [
+  "Пробег от, км",
+  0,
+  20000000
+ ],
+ "mileage_to": [
+  "Пробег до, км",
+  0,
+  20000000
+ ],
+ "color": ["Фильтр цвета",["Белый","Чёрный","Серый","Серебристый","Синий","Красный","Зелёный","Коричневый","Бежевый","Другой"]],
+ "body": [
+  "Кузов",
+  [
+   "Седан",
+   "Хэтчбек",
+   "Универсал",
+   "Лифтбек",
+   "Внедорожник",
+   "Кроссовер",
+   "Купе",
+   "Кабриолет",
+   "Минивэн",
+   "Пикап",
+   "Фургон"
+  ]
+ ],
+ "gearbox": [
+  "Коробка",
+  [
+   "Автомат",
+   "Механика",
+   "Робот",
+   "Вариатор"
+  ]
+ ],
+ "fuel": [
+  "Топливо",
+  [
+   "Бензин",
+   "Дизель",
+   "Гибрид",
+   "Электро",
+   "Газ"
+  ]
+ ],
+ "drive": [
+  "Привод",
+  [
+   "Передний",
+   "Задний",
+   "Полный"
+  ]
+ ]
+};
 const labels = {
   client_name:'Имя', phone:'Телефон', model:'Модель', brand:'Марка', budget:'Бюджет',
   generation:'Поколение', years:'Годы', mileage:'Пробег', color:'Цвет', trim:'Комплектация', city:'Город'
@@ -40,7 +116,15 @@ export function intakeFields(text,origin){
   const found=colors.filter(([s])=>new RegExp('(?:^|\\s)'+s+'(?:ую|юю|ый|ий|яя|ая)(?:\\s|[,.;]|$)','iu').test(value));if(found.length===1)f.color=found[0][1];
   for(const line of value.split(/[\n;]/)){
     const m=line.trim().match(/^([^:]{1,24}):\s*(.{1,200})$/u);if(!m)continue;
-    const k=names[m[1].trim().toLowerCase()],v=m[2].trim();if(!k)continue;
+    const label=m[1].trim().toLowerCase().replace(/,?\s*(₽|км)$/i,'');
+    const filter=Object.keys(filterSpec).find(k=>filterSpec[k][0].toLowerCase().replace(/,?\s*(₽|км)$/i,'')===label);
+    const v=m[2].trim();
+    if(filter){
+      f.filters??={};const opts=filterSpec[filter][1];
+      f.filters[filter]=/^(любой|любая|любое|убрать|без ограничений)$/iu.test(v)?'':Array.isArray(opts)?(opts.find(x=>x.toLowerCase()===v.toLowerCase())||v):v.replace(/\s/g,'');
+      continue;
+    }
+    const k=names[m[1].trim().toLowerCase()];if(!k)continue;
     if(k==='budget'){const n=amount(v);if(n)f.budget=n;else delete f.budget;}
     else if(k==='phone'){let n=v.replace(/[ ()+-]/g,'');if(n.length===10)n='7'+n;if(/^8\d{10}$/.test(n))n='7'+n.slice(1);if(/^\d{10,15}$/.test(n))f.phone=n;else delete f.phone;}
     else if(k==='mileage'){const n=v.replace(/(?:\s|км)/gi,'');if(/^\d{1,8}$/.test(n)&&Number(n)<=20000000)f.mileage=Number(n);}
@@ -53,5 +137,12 @@ export function intakePreview(f){
   const rows=Object.entries(labels).filter(([k])=>f[k]!=null).map(([k,v])=>v+': '+(k==='budget'?Number(f[k]).toLocaleString('ru-RU')+' ₽':f[k]));
   const prompt=missing.length?'Допишите отдельными строками:\n'+missing.map(k=>labels[k]+': …').join('\n'):
     'Проверьте параметры. Поставщикам уйдут марка, модель, поколение, годы, пробег, цвет и комплектация. Нажмите «Создать заявку», если клиент согласен на обработку данных.';
+  const invalid=[];
+  for(const [k,v] of Object.entries(f.filters||{})){
+    if(!v||!filterSpec[k])continue;const [label,opts,max]=filterSpec[k];rows.push(label+': '+v);
+    if(Array.isArray(opts)?!opts.includes(v):!/^\d+$/.test(v)||Number(v)<opts||Number(v)>max)invalid.push(label+(Array.isArray(opts)?' ('+opts.join(', ')+')':''));
+  }
+  for(const key of ['year','mileage','price']){const a=f.filters?.[key+'_from'],b=f.filters?.[key+'_to'];if(a&&b&&Number(a)>Number(b))invalid.push(filterSpec[key+'_from'][0]+' больше верхней границы');}
+  if(invalid.length)return {ready:false,text:rows.join('\n')+'\nИсправьте фильтры: '+invalid.join(', ')};
   return {ready:!missing.length,text:['Черновик заявки',...rows,'',prompt,'Изменить любое поле можно сообщением «Поле: значение».'].join('\n')};
 }

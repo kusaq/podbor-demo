@@ -199,8 +199,8 @@ Deno.serve(async (req) => {
   if (action?.startsWith('workflow.')) {
     if (!['admin','owner','manager'].includes(me.role)) return json({error:'crm_forbidden'},403);
     const op=action.slice(9);
-    if (!['network','terms.save','policy.save','inbox','choose_car','dispatch','photo','option.fromReply','reply','search.retry','listing.save','listing.call'].includes(op)) return json({error:'backend_bad_action'},400);
-    if (JSON.stringify(p).length>20000) return json({error:'backend_bad_data'},400);
+    if (!['recipients','network','terms.save','policy.save','inbox','choose_car','dispatch','photo','option.withPhotos','option.fromReply','reply','search.retry','listing.save','listing.call'].includes(op)) return json({error:'backend_bad_action'},400);
+    if (JSON.stringify(p).length>(op==='option.withPhotos'?3600000:20000)) return json({error:'backend_bad_data'},400);
     if (op==='choose_car') {
       const ids=[p.request_id,p.offer,p.option,p.token];
       if (!ids.every(id=>typeof id==='string' && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) ||
@@ -337,7 +337,7 @@ Deno.serve(async (req) => {
       console.error("mocks lookup failed", { code: mocks.error.code, message: mocks.error.message });
       return json({ error: "db_mocks_failed" }, 500);
     }
-    return json({ me, mocks: mocks.data ?? [] });
+    return json({ me:{...me,supplier_routing:true}, mocks: mocks.data ?? [] });
   }
 
 

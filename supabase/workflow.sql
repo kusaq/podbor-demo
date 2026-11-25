@@ -168,36 +168,96 @@ end $$;
 create or replace trigger workflow_start_sources after insert on public.bot_request_specs
  for each row execute function public.workflow_start_sources();
 
-create or replace function public.workflow_dispatch(p_actor bigint,p_request uuid,p_brand text,p_color text,p_trim text)
+alter table public.supplier_terms add column if not exists routing_enabled boolean not null default true;
+alter table public.bot_request_specs add column if not exists filters jsonb not null default '{}';
+create or replace function public.workflow_filters(filters jsonb) returns jsonb language plpgsql immutable as $$
+declare k text; v text; f jsonb:='{}'; n numeric;
+begin
+ if jsonb_typeof(filters) is distinct from 'object' then raise exception 'backend_bad_data'; end if;
+ for k,v in select key,value from jsonb_each_text(filters) loop
+  if nullif(trim(v),'') is null then continue; end if;
+  case k
+   when 'price_from' then if v !~ '^[0-9]{1,12}$' or v::numeric not between 0 and 100000000000 then raise exception 'backend_bad_data';end if;f:=f||jsonb_build_object(k,v::bigint);
+   when 'price_to' then if v !~ '^[0-9]{1,12}$' or v::numeric not between 0 and 100000000000 then raise exception 'backend_bad_data';end if;f:=f||jsonb_build_object(k,v::bigint);
+   when 'year_from' then if v !~ '^[0-9]{1,12}$' or v::numeric not between 1900 and 2100 then raise exception 'backend_bad_data';end if;f:=f||jsonb_build_object(k,v::bigint);
+   when 'year_to' then if v !~ '^[0-9]{1,12}$' or v::numeric not between 1900 and 2100 then raise exception 'backend_bad_data';end if;f:=f||jsonb_build_object(k,v::bigint);
+   when 'mileage_from' then if v !~ '^[0-9]{1,12}$' or v::numeric not between 0 and 20000000 then raise exception 'backend_bad_data';end if;f:=f||jsonb_build_object(k,v::bigint);
+   when 'mileage_to' then if v !~ '^[0-9]{1,12}$' or v::numeric not between 0 and 20000000 then raise exception 'backend_bad_data';end if;f:=f||jsonb_build_object(k,v::bigint);
+   when 'color' then if v not in ('Белый','Чёрный','Серый','Серебристый','Синий','Красный','Зелёный','Коричневый','Бежевый','Другой') then raise exception 'backend_bad_data'; end if; f:=f||jsonb_build_object(k,v);
+   when 'body' then if v not in ('Седан','Хэтчбек','Универсал','Лифтбек','Внедорожник','Кроссовер','Купе','Кабриолет','Минивэн','Пикап','Фургон') then raise exception 'backend_bad_data'; end if; f:=f||jsonb_build_object(k,v);
+   when 'gearbox' then if v not in ('Автомат','Механика','Робот','Вариатор') then raise exception 'backend_bad_data'; end if; f:=f||jsonb_build_object(k,v);
+   when 'fuel' then if v not in ('Бензин','Дизель','Гибрид','Электро','Газ') then raise exception 'backend_bad_data'; end if; f:=f||jsonb_build_object(k,v);
+   when 'drive' then if v not in ('Передний','Задний','Полный') then raise exception 'backend_bad_data'; end if; f:=f||jsonb_build_object(k,v);
+   else raise exception 'backend_bad_data'; end case;
+ end loop;
+ foreach k in array array['price','year','mileage'] loop
+  if (f->>(k||'_from'))::numeric>(f->>(k||'_to'))::numeric then raise exception 'backend_bad_data'; end if;
+ end loop;
+ return f;
+end $$;
+revoke all on function public.workflow_filters(jsonb) from public,anon,authenticated;
+grant execute on function public.workflow_filters(jsonb) to service_role;
+create or replace function public.workflow_brand(value text) returns text language sql immutable strict as $$
+ select case lower(trim(value)) when 'тойота' then 'toyota' when 'тоёта' then 'toyota' when 'тоета' then 'toyota'
+ when 'лексус' then 'lexus' when 'ниссан' then 'nissan' when 'мазда' then 'mazda' when 'бмв' then 'bmw' when 'киа' then 'kia'
+ when 'хонда' then 'honda' when 'ауди' then 'audi' when 'хендай' then 'hyundai' when 'хёндэ' then 'hyundai'
+ when 'фольксваген' then 'volkswagen' when 'мерседес' then 'mercedes-benz' else lower(trim(value)) end
+$$;
+create or replace function public.workflow_route_brand(brand text,model text) returns text language sql stable security invoker set search_path=public,pg_temp as $$
+ select workflow_brand(coalesce(nullif(trim(brand),''),(select b from bot_supplier_profiles sp cross join unnest(sp.brands) b
+ where sp.active and (lower(trim(model))=lower(b) or starts_with(lower(trim(model)),lower(b)||' ')) order by length(b) desc limit 1),split_part(trim(model),' ',1)))
+$$;
+create or replace function public.workflow_routes(company uuid,brand text) returns table(supplier bigint,key text,name text)
+ language sql stable security invoker set search_path=public,pg_temp as $$
+ select u.tg_id,md5(company::text||':'||u.tg_id),case when company=u.company_id then u.name else 'Поставщик '||right(md5(u.tg_id::text),6) end
+ from app_users u join bot_supplier_profiles s on s.user_id=u.tg_id left join supplier_terms st on st.company_id=company and st.supplier_id=u.tg_id
+ where u.role='supplier' and u.active and s.active and coalesce(st.routing_enabled,true) and exists(select 1 from unnest(s.brands) b where workflow_brand(b)=workflow_brand(brand))
+ order by 3,2
+$$;
+create or replace function public.workflow_bot_routes(p_company uuid,p_brand text) returns jsonb language sql stable security invoker set search_path=public,pg_temp as $$
+ select coalesce(jsonb_agg(jsonb_build_object('user_id',supplier)),'[]') from workflow_routes(p_company,p_brand)
+$$;
+create or replace function public.workflow_delivery_route(p_thread uuid) returns boolean language sql stable security invoker set search_path=public,pg_temp as $$
+ select exists(select 1 from bot_threads t join bot_request_specs s on s.request_id=t.request_id cross join lateral workflow_routes(t.company_id,s.brand) w where t.id=p_thread and t.supplier_id=w.supplier)
+$$;
+revoke all on function public.workflow_bot_routes(uuid,text),public.workflow_delivery_route(uuid) from public,anon,authenticated;
+grant execute on function public.workflow_bot_routes(uuid,text),public.workflow_delivery_route(uuid) to service_role;
+revoke all on function public.workflow_routes(uuid,text),public.workflow_brand(text),public.workflow_route_brand(text,text) from public,anon,authenticated;
+grant execute on function public.workflow_routes(uuid,text),public.workflow_brand(text),public.workflow_route_brand(text,text) to service_role;
+
+create or replace function public.workflow_dispatch_selected(p_actor bigint,p_request uuid,p_brand text,p_color text,p_trim text,p_recipients jsonb,p_filters jsonb)
 returns integer language plpgsql security invoker set search_path=public,pg_temp as $$
-declare r crm_requests; t bot_threads; supplier bigint; mid uuid; body text; n integer:=0; brand text:=lower(trim(p_brand)); v text;
+declare r crm_requests; t bot_threads; supplier bigint; mid uuid; body text; n integer:=0; filter_data jsonb; previous_filters jsonb; brand text:=lower(trim(p_brand)); v text;
 begin
  perform crm_request_detail(p_actor,p_request);
  select * into strict r from crm_requests where id=p_request for update;
  if r.archived_at is not null or r.status not in ('search','think') then raise exception 'backend_closed'; end if;
- if nullif(brand,'') is null then
-  select b into brand from bot_supplier_profiles sp cross join unnest(sp.brands) b where sp.active and
-   (lower(r.model)=b or starts_with(lower(r.model),b||' ')) order by length(b) desc limit 1;
-  brand:=coalesce(brand,lower(split_part(trim(r.model),' ',1)));
- end if;
+ brand:=workflow_route_brand(p_brand,r.model);
+ if p_recipients is not null and jsonb_typeof(p_recipients)<>'array' then raise exception 'backend_bad_data'; end if;
  if nullif(brand,'') is null or length(brand)>80 or length(p_trim)>160 or length(p_color)>100 then raise exception 'backend_bad_data'; end if;
  -- Only the public vehicle fields ever go into the supplier request. Reject contact-like input.
  foreach v in array array[brand,r.model,r.generation,r.years,p_color,p_trim] loop
   if v ~* '(@|https?://|www\.|t\.me/|[[:cntrl:]]|[+]?[0-9][0-9 ()-]{8,}[0-9])' or
     length(trim(r.client_name))>=3 and strpos(lower(v),lower(trim(r.client_name)))>0 then raise exception 'backend_bad_data'; end if;
  end loop;
- insert into bot_request_specs(request_id,company_id,brand,model_at_selection,color,trim)
- values(r.id,r.company_id,brand,r.model,p_color,p_trim)
- on conflict(request_id) do update set brand=excluded.brand,model_at_selection=excluded.model_at_selection,color=excluded.color,trim=excluded.trim;
- for supplier in select u.tg_id from app_users u join bot_supplier_profiles p on p.user_id=u.tg_id where
-  u.active and u.role='supplier' and p.active and brand=any(p.brands) loop
+ select filters into previous_filters from bot_request_specs where request_id=r.id;
+ filter_data:=workflow_filters(coalesce(p_filters,previous_filters,'{}'));
+ insert into bot_request_specs(request_id,company_id,brand,model_at_selection,color,trim,filters)
+ values(r.id,r.company_id,brand,r.model,p_color,p_trim,filter_data)
+ on conflict(request_id) do update set brand=excluded.brand,model_at_selection=excluded.model_at_selection,color=excluded.color,trim=excluded.trim,filters=excluded.filters;
+ if previous_filters is not null and previous_filters<>filter_data then
+  update search_sources set state='pending',attempt=attempt+1 where request_id=r.id;
+ end if;
+ for supplier in select w.supplier from workflow_routes(r.company_id,brand) w where p_recipients is null or p_recipients ? w.key loop
   insert into bot_threads(company_id,request_id,supplier_id) values(r.company_id,r.id,supplier)
   on conflict(request_id,supplier_id) do nothing returning * into t;
   if not found then continue; end if;
   body:=concat_ws(E'\n','Запрос № '||t.code,'Марка: '||brand,'Модель: '||r.model,
    'Поколение: '||coalesce(nullif(r.generation,''),'не указано'),'Годы: '||coalesce(nullif(r.years,''),'не указаны'),
-   'Пробег до, км: '||coalesce(r.mileage::text,'не указан'),'Цвет: '||coalesce(nullif(p_color,''),'не указан'),
+   'Пробег до, км: '||coalesce(r.mileage::text,'не указан'),'Цвет: '||coalesce(nullif(filter_data->>'color',''),nullif(p_color,''),'не указан'),
    'Комплектация: '||coalesce(nullif(p_trim,''),'не указана'),
+   'Кузов: '||(filter_data->>'body'),'Коробка: '||(filter_data->>'gearbox'),'Топливо: '||(filter_data->>'fuel'),'Привод: '||(filter_data->>'drive'),
+   'Год от: '||(filter_data->>'year_from'),'Год до: '||(filter_data->>'year_to'),'Пробег от, км: '||(filter_data->>'mileage_from'),'Пробег до, км: '||(filter_data->>'mileage_to'),
    'Ответьте на это сообщение. Укажите модель, год, пробег, цену, валюту и срок. Запросите или укажите свой расчёт по строкам: «Цена: 1800000 JPY» и «Доставка: 80000 RUB» либо «Под ключ: 2400000 RUB». Фото одной машины можно отправить альбомом.');
   insert into bot_messages(thread_id,actor_id,sanitized_text) values(t.id,p_actor,body) returning id into mid;
   insert into bot_outbox(chat_id,actor_id,thread_id,message_id,dedupe_key,body) values(supplier,p_actor,t.id,mid,'dispatch:'||t.id,
@@ -207,6 +267,12 @@ begin
  return n;
 end $$;
 
+revoke all on function public.workflow_dispatch_selected(bigint,uuid,text,text,text,jsonb,jsonb) from public,anon,authenticated;
+grant execute on function public.workflow_dispatch_selected(bigint,uuid,text,text,text,jsonb,jsonb) to service_role;
+create or replace function public.workflow_dispatch(p_actor bigint,p_request uuid,p_brand text,p_color text,p_trim text)
+returns integer language sql security invoker set search_path=public,pg_temp as $$
+ select workflow_dispatch_selected(p_actor,p_request,p_brand,p_color,p_trim,null,null)
+$$;
 create or replace function public.workflow_create(p_actor bigint,p_token uuid,p_data jsonb,p_search jsonb)
 returns jsonb language plpgsql security invoker set search_path=public,pg_temp as $$
 declare saved workflow_creates; r jsonb; n integer; payload jsonb:=jsonb_build_array(p_data-'consent_at',p_search);
@@ -220,7 +286,7 @@ begin
     'queued',(select count(*) from bot_threads where request_id=saved.request_id));
  end if;
  r:=crm_save_request(p_actor,null,0,p_data);
- n:=workflow_dispatch(p_actor,(r->>'id')::uuid,p_search->>'brand',coalesce(p_search->>'color',''),coalesce(p_search->>'trim',''));
+ n:=workflow_dispatch_selected(p_actor,(r->>'id')::uuid,p_search->>'brand',coalesce(p_search->>'color',''),coalesce(p_search->>'trim',''),p_search->'recipients',p_search->'filters');
  insert into workflow_creates values(p_actor,p_token,(r->>'id')::uuid,payload);
  return jsonb_build_object('request',r,'queued',n);
 end $$;
@@ -242,6 +308,19 @@ begin
  if length(p_text)>4000 or length(group_key)>100 then raise exception 'backend_bad_data'; end if;
  select * into m from bot_messages where actor_id=p_actor and (job_id=p_job or album=group_key) for update;
  if found and m.thread_id<>p_thread then raise exception 'crm_conflict'; end if;
+ if m.id is null and p_jpeg is not null and coalesce(p_text,'')='' then
+  if inbound?'reply_to_message' then
+   select bm.* into m from bot_messages bm where bm.thread_id=t.id and bm.actor_id=p_actor and bm.id in
+    (select ref.message_id from supplier_input_refs ref where inbound->'reply_to_message'->'from'->>'id'=p_actor::text and ref.actor_id=p_actor and ref.telegram_id=(inbound->'reply_to_message'->>'message_id')::bigint
+     union all select substring(b.body#>>'{reply_markup,inline_keyboard,0,0,callback_data}' from 8)::uuid from bot_outbox b
+      where b.chat_id=p_actor and b.thread_id=t.id and b.telegram_message_id=(inbound->'reply_to_message'->>'message_id')::bigint and b.body#>>'{reply_markup,inline_keyboard,0,0,callback_data}' ~ '^addpic:[0-9a-f-]{36}$')
+    limit 1 for update;
+  else
+   select bm.* into m from bot_context c join bot_messages bm on bm.id::text=c.dialogue->0->>'message_id'
+    where c.user_id=p_actor and c.thread_id=t.id and c.dialogue->0->>'role'='attach_photos' and bm.thread_id=t.id and bm.actor_id=p_actor for update of bm;
+  end if;
+ end if;
+ if nullif(p_text,'') is not null then update bot_context set dialogue='[]' where user_id=p_actor and dialogue->0->>'role'='attach_photos'; end if;
  if m.id is null then
   insert into bot_messages(thread_id,actor_id,job_id,album,sanitized_text,parsed)
   values(t.id,p_actor,p_job,group_key,p_text,p_parsed) returning * into m;
@@ -263,6 +342,19 @@ begin
  return jsonb_build_object('id',m.id,'thread_id',t.id);
 end $$;
 
+create table if not exists public.option_uploads (
+ id uuid primary key, request_id uuid not null references public.crm_requests(id),
+ jpeg text not null check(length(jpeg) between 8 and 350000)
+);
+create index if not exists option_uploads_request on public.option_uploads(request_id);
+create table if not exists public.option_photo_writes (
+ actor_id bigint not null, token uuid not null, request_id uuid not null references public.crm_requests(id),
+ option_id uuid not null references public.request_options(id), fingerprint text not null, primary key(actor_id,token)
+);
+alter table public.option_uploads enable row level security;
+alter table public.option_photo_writes enable row level security;
+revoke all on public.option_uploads,public.option_photo_writes from public,anon,authenticated;
+grant select,insert on public.option_uploads,public.option_photo_writes to service_role;
 create or replace function public.crm_workflow(p_actor bigint,p_action text,p jsonb)
 returns jsonb language plpgsql security invoker set search_path=public,pg_temp as $$
 declare a app_users; r crm_requests; t bot_threads; m bot_messages; u app_users; terms supplier_terms; pol workflow_policy;
@@ -270,13 +362,19 @@ declare a app_users; r crm_requests; t bot_threads; m bot_messages; u app_users;
 begin
  select * into a from app_users where tg_id=p_actor and active and role in ('manager','owner','admin');
  if not found then raise exception 'crm_forbidden'; end if;
+ if p_action='recipients' then
+  if p->>'request_id' is not null then perform crm_request_detail(p_actor,(p->>'request_id')::uuid); end if;
+  k:=workflow_route_brand(p->>'brand',p->>'model');
+  return jsonb_build_object('brand',k,'recipients',coalesce((select jsonb_agg(jsonb_build_object('key',w.key,'name',w.name) order by w.name,w.key)
+   from workflow_routes(a.company_id,k) w where not exists(select 1 from bot_threads t2 where t2.request_id=(p->>'request_id')::uuid and t2.supplier_id=w.supplier)),'[]'));
+ end if;
  if p_action in ('network','terms.save','policy.save') then
   if a.role='manager' then raise exception 'crm_forbidden'; end if;
   if p_action='network' then
    return jsonb_build_object('schema_version',2,'suppliers',coalesce((select jsonb_agg(x order by x.name) from (
     select case when u1.company_id=a.company_id then u1.tg_id::text else md5(a.company_id::text||':'||u1.tg_id) end as id, case when u1.company_id=a.company_id then u1.name else 'Поставщик '||right(md5(u1.tg_id::text),6) end as name,
      u1.company_id=a.company_id as owned, p1.brands,coalesce(p1.active,false) as enabled,u1.active,
-     coalesce(s.revision,0) as revision,coalesce(s.currency,'RUB') as currency,coalesce(s.fees,'{}') as fees
+     coalesce(s.revision,0) as revision,coalesce(s.currency,'RUB') as currency,coalesce(s.fees,'{}') as fees,coalesce(s.routing_enabled,true) as routing_enabled
     from app_users u1 left join bot_supplier_profiles p1 on p1.user_id=u1.tg_id
     left join supplier_terms s on s.company_id=a.company_id and s.supplier_id=u1.tg_id
     where u1.role='supplier' and (u1.company_id=a.company_id or u1.active and p1.active)) x),'[]'),
@@ -310,13 +408,14 @@ begin
   end if;
   insert into supplier_terms values(a.company_id,u.tg_id,coalesce(rev,0)+1,p->>'currency',fees)
    on conflict(company_id,supplier_id) do update set revision=excluded.revision,currency=excluded.currency,fees=excluded.fees;
+  if p?'routing_enabled' then update supplier_terms set routing_enabled=(p->>'routing_enabled')::boolean where supplier_id=u.tg_id and company_id=a.company_id; end if;
   return '{"ok":true}';
  end if;
  perform crm_request_detail(p_actor,(p->>'request_id')::uuid);
  select * into strict r from crm_requests where id=(p->>'request_id')::uuid for update;
  if p_action='inbox' then
   return jsonb_build_object(
-   'tolerances',(select jsonb_build_object('years',year_slack,'km',km_slack,'pct',budget_pct) from workflow_policy where company_id=r.company_id),
+   'lot_media',true,'tolerances',(select jsonb_build_object('years',year_slack,'km',km_slack,'pct',budget_pct) from workflow_policy where company_id=r.company_id),
    'sent_cars',coalesce((select jsonb_agg(jsonb_build_object('offer',f.id,'number',f.number,'option',f.option_ids[n],'title',f.model->'cars'->(n-1)->>'title','price',f.model->'cars'->(n-1)->'price') order by f.number desc,n)
      from request_offers f cross join lateral generate_subscripts(f.option_ids,1) n where f.request_id=r.id and f.sent_at is not null),'[]'),
    'choice',(select data->'choice' from crm_activity where request_id=r.id and kind='car.chosen' order by created_at desc,id desc limit 1),
@@ -333,7 +432,7 @@ begin
     'delivery',(select b.state from bot_outbox b where b.thread_id=th.id and b.chat_id=th.supplier_id order by created_at,id limit 1),
     'messages',coalesce((select jsonb_agg(jsonb_build_object('id',z.id,'incoming',z.actor_id=th.supplier_id,'text',z.sanitized_text,
      'parsed',z.parsed,'at',z.created_at,'option_id',z.option_id,
-     'delivery',(select b.state from bot_outbox b where b.message_id=z.id),
+     'delivery',(select b.state from bot_outbox b where b.message_id=z.id order by b.created_at desc,b.id limit 1),
      'photos',coalesce((select jsonb_agg(f.id order by f.job_id) from supplier_photos f where f.message_id=z.id),'[]')) order by z.created_at,z.id)
      from bot_messages z where z.thread_id=th.id),'[]')) order by th.code)
     from bot_threads th join app_users su on su.tg_id=th.supplier_id left join supplier_terms tr on tr.supplier_id=su.tg_id and tr.company_id=r.company_id
@@ -358,11 +457,12 @@ begin
  if p_action='photo' then
   select jsonb_build_object('data','data:image/jpeg;base64,'||f.jpeg) into result from supplier_photos f
    join bot_messages m1 on m1.id=f.message_id join bot_threads t1 on t1.id=m1.thread_id where f.id=(p->>'id')::uuid and t1.request_id=r.id;
+  if not found then select jsonb_build_object('data','data:image/jpeg;base64,'||f.jpeg) into result from option_uploads f where f.id=(p->>'id')::uuid and f.request_id=r.id; end if;
   if not found then raise exception 'crm_not_found'; end if;
   return result;
  end if;
  if r.archived_at is not null or r.status not in ('search','think') then raise exception 'backend_closed'; end if;
- if p_action='dispatch' then return jsonb_build_object('queued',workflow_dispatch(p_actor,r.id,p->>'brand',coalesce(p->>'color',''),coalesce(p->>'trim',''))); end if;
+ if p_action='dispatch' then return jsonb_build_object('queued',workflow_dispatch_selected(p_actor,r.id,p->>'brand',coalesce(p->>'color',''),coalesce(p->>'trim',''),p->'recipients',p->'filters')); end if;
  if p_action='listing.save' then
   insert into request_listings(request_id,url,title,purchase,term,currency,vehicle,phone,quote_mode)
    values(r.id,p->>'url',trim(p->>'title'),nullif(p->>'purchase','')::numeric,coalesce(p->>'term',''),
@@ -406,6 +506,39 @@ begin
   end if;
   return '{"ok":true}';
  end if;
+ if p_action='option.withPhotos' then
+  declare upload jsonb; old_write option_photo_writes; supplier_ids uuid[]; option_id uuid; signature text:=md5(p::text); raw bytea;
+  begin
+   if p->>'token' is null or jsonb_typeof(p->'photos') is distinct from 'array' or jsonb_typeof(p->'uploads') is distinct from 'array'
+    or jsonb_array_length(p->'photos')>10 or jsonb_array_length(p->'uploads')>10 then raise exception 'backend_bad_data'; end if;
+   select * into old_write from option_photo_writes where actor_id=p_actor and token=(p->>'token')::uuid;
+   if found then
+    if old_write.fingerprint<>signature then raise exception 'crm_conflict'; end if;
+    return jsonb_build_object('id',old_write.option_id);
+   end if;
+   select array(select value::uuid from jsonb_array_elements_text(p->'photos')) into photos;
+   if cardinality(photos)<>(select count(distinct pid) from unnest(photos) pid) then raise exception 'backend_bad_data'; end if;
+   for upload in select value from jsonb_array_elements(p->'uploads') loop
+    if not ((upload->>'id')::uuid=any(photos)) or length(upload->>'jpeg') not between 8 and 350000 then raise exception 'backend_bad_data'; end if;
+    raw:=decode(upload->>'jpeg','base64');
+    if substring(raw from 1 for 3)<>decode('ffd8ff','hex') or substring(raw from greatest(length(raw)-1,1))<>decode('ffd9','hex') then raise exception 'backend_bad_data'; end if;
+    insert into option_uploads values((upload->>'id')::uuid,r.id,upload->>'jpeg') on conflict(id) do nothing;
+    if not exists(select 1 from option_uploads f where f.id=(upload->>'id')::uuid and f.request_id=r.id and f.jpeg=upload->>'jpeg') then raise exception 'crm_conflict'; end if;
+   end loop;
+   select array(select x from unnest(photos) x where not exists(select 1 from option_uploads f where f.id=x and f.request_id=r.id)) into supplier_ids;
+   if p->>'message_id' is not null then
+    result:=crm_workflow(p_actor,'option.fromReply',(p-'uploads')||jsonb_build_object('photos',to_jsonb(supplier_ids)));
+    option_id:=(result->>'id')::uuid;
+   else
+    if cardinality(supplier_ids)>0 then raise exception 'crm_not_found'; end if;
+    result:=crm_backend(p_actor,'option.save',(p->'option')||jsonb_build_object('request_id',r.id));
+    option_id:=(result->'option'->>'id')::uuid;
+   end if;
+   update request_options set photo_ids=photos where id=option_id and request_id=r.id;
+   insert into option_photo_writes values(p_actor,(p->>'token')::uuid,r.id,option_id,signature);
+   return jsonb_build_object('id',option_id);
+  end;
+ end if;
  if p_action='option.fromReply' then
   select z.* into m from bot_messages z join bot_threads th on th.id=z.thread_id and th.supplier_id=z.actor_id
    where z.id=(p->>'message_id')::uuid and th.request_id=r.id for update of z;
@@ -435,7 +568,7 @@ create or replace function public.workflow_claim_sources() returns setof jsonb l
  order by s.claimed_at nulls first,s.request_id,s.source limit 6 for update of s skip locked),
  claimed as (update search_sources s set state='running',claimed_at=now(),attempt=attempt+1 from todo
  where (s.request_id,s.source)=(todo.request_id,todo.source) returning s.*)
- select jsonb_build_object('request_id',c.request_id,'source',c.source,'attempt',c.attempt,'company',r.company_id,'model',r.model)
+ select jsonb_build_object('request_id',c.request_id,'source',c.source,'attempt',c.attempt,'company',r.company_id,'model',r.model,'filters',coalesce((select filters from bot_request_specs where request_id=r.id),'{}'::jsonb))
  from claimed c join crm_requests r on r.id=c.request_id;
 $$;
 

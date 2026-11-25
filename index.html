@@ -9,7 +9,9 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script defer src="assets/pdf-lib.min.js"></script>
 <script defer src="assets/fontkit.umd.min.js"></script>
-<script defer src="lot-review.js?v=20261125order"></script>
+<link rel="stylesheet" href="lot-tools.css?v=1">
+<script defer src="lot-tools.js?v=1"></script>
+<script defer src="lot-review.js?v=20261125routing"></script>
 <script defer src="pdf.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
@@ -381,7 +383,12 @@ var API_URL = 'https://lobzdwuqyylthmhsgucd.supabase.co/functions/v1/api';
 /* Публичный ключ проекта: его можно держать в коде страницы, доступ решает проверка входа из Telegram. */
 var API_KEY = 'sb_publishable_YH4c53SnOnZWnRXwNNnB2Q_vijUYTYi';
 function online() { return !!(API_URL && TG && TG.initData); }
-function call(action, payload) {
+async function call(action, payload) {
+  if(action==='crm.save'&&payload?.search&&S.canRoute&&!payload.search.recipients){
+    const picked=await window.PodborLotTools.route(call,{...payload.search,model:payload.data.model},true);
+    if(!picked)throw new Error('Создание отменено');
+    payload={...payload,search:{...payload.search,...picked}};
+  }
   var controller = new AbortController(), timer = setTimeout(function () { controller.abort(); }, 20000);
   return fetch(API_URL, { signal: controller.signal, method: 'POST', headers: { 'content-type': 'application/json', apikey: API_KEY, authorization: 'Bearer ' + API_KEY }, body: JSON.stringify({ initData: TG.initData, action: action, payload: payload || {} }) })
     .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error(j.error || ('HTTP ' + r.status)); e.code = j.error || 'http'; throw e; } return j; }); }).finally(function () { clearTimeout(timer); });
@@ -411,7 +418,7 @@ function enterOnline() {
   S.screen = 'boot'; S.bootErr = ''; render();
   S.tg = TG.initDataUnsafe && TG.initDataUnsafe.user || null;
   call('me').then(function (j) {
-    S.me = fromRow(j.me); S.role = S.me.role; restoreDemoSettings(); applyMocks(j.mocks || []); loadRequests();
+    S.me = fromRow(j.me); S.canRoute=!!j.me.supplier_routing; S.role = S.me.role; restoreDemoSettings(); applyMocks(j.mocks || []); loadRequests();
     return loadWorkspace().then(function () { return loadCrmRequests(); }).then(function () { S.screen = homeOf(S.role); S.stack = []; if (S.role === 'admin' || S.role === 'owner') return refreshUsers(); });
   }).catch(function (e) {
     S.me = null; S.screen = 'noaccess';
