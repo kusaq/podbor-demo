@@ -1,34 +1,51 @@
 'use strict';
-window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,formatError,refreshCard}) {
-  const root=document.getElementById('admin');
+window.PodborWorkflow = function({root=document.getElementById('admin'),api,esc,render,flash,request,domain,isBusy,formatError,refreshCard,actor}) {
   const op=(name,data={})=>api('workflow.'+name,data);
   const fees={logistics:'Доставка до клиента',commission:'Комиссия',duty:'Пошлина',recycling:'Утильсбор',documents:'Оформление'};
   const currencies=['RUB','CNY','JPY','USD','EUR'];
-  const states={disabled:'Автопоиск выключен салоном',pending:'В очереди',running:'Идёт поиск',ready:'Поиск завершён',unconfigured:'Источник не подключён',failed:'Ошибка',sent:'Доставлен',sending:'Отправляется',uncertain:'Проверить доставку'};
+  const states={disabled:'Автопоиск выключен салоном',pending:'В очереди',running:'Идёт поиск',ready:'Поиск завершён',unconfigured:'Источник не подключён',failed:'Ошибка',sent:'Отправлен в Telegram',sending:'Отправляется',uncertain:'Проверить доставку'};
   let id='',inbox=null,network=null,networkDraft=null,policyDraft=null,selected='',thread='',revision=0,busy=false,error='',tokens={},formValues={},edited=false;
   const images=new Map();
   function reset(){
     revision++; id=''; inbox=network=networkDraft=policyDraft=null; selected=thread=error=''; formValues={};tokens={}; edited=false;images.clear();
   }
-  async function load(requestId){
+  async function load(requestId,preferredThread){
     const ticket=++revision;
     if(id!==requestId){inbox=null;thread='';formValues={};tokens={};edited=false;images.clear();}
     id=requestId; error='';
-    try{const data=await op('inbox',{request_id:id});if(ticket===revision){inbox=data;if(!thread){const link=new URLSearchParams(location.search);const wanted=link.get('request')===id&&link.get('thread');thread=wanted?(data.threads?.find(t=>t.id===wanted)?.id||''):(data.threads?.[0]?.id||'');}}}
+    try{const data=await op('inbox',{request_id:id});if(ticket===revision){inbox=data;if(!thread){const link=new URLSearchParams(location.search);const wanted=preferredThread||(link.get('request')===id&&link.get('thread'));thread=wanted?(data.threads?.find(t=>t.id===wanted)?.id||''):(data.threads?.[0]?.id||'');}}}
     catch(e){if(ticket===revision)error=formatError(e);}
   }
   async function networkLoad(){
     const ticket=++revision;
-    try{const data=await op('network');if(ticket!==revision)return;network=data;policyDraft={...data.policy};pickSupplier(selected||data.suppliers?.[0]?.id);error='';}
+    try{const [data]=await Promise.all([op('network'),window.VehicleCatalog?.load().catch(()=>{})]);if(ticket!==revision)return;network=data;policyDraft={...data.policy};pickSupplier(selected||data.suppliers?.[0]?.id);error='';}
     catch(e){if(ticket===revision)error=formatError(e);}
   }
   function pickSupplier(value){
     const row=network?.suppliers?.find(s=>String(s.id)===String(value));
-    selected=row?String(row.id):'';networkDraft=row?{...row,brands:(row.brands||[]).join(', '),fees:{...row.fees}}:null;edited=false;
+    selected=row?String(row.id):'';networkDraft=row?{...row,brands:[...new Set((row.brands||[]).map(b=>window.VehicleCatalog?.canonicalMake(b)||b))].join(', '),model_rules:{...(row.model_rules||{})},fees:{...row.fees}}:null;edited=false;
   }
   const action=(act,label,value='',style='small ghost')=>'<button type="button" class="btn '+style+'" data-flow="'+act+'" data-value="'+esc(value)+'">'+esc(label)+'</button>';
   function input(key,label,value,type='text',extra=''){
     return '<label class="field">'+esc(label)+'<input data-wf="'+key+'" type="'+type+'" value="'+esc(value??'')+'" '+extra+'></label>';
+  }
+  function specialties(d){
+    const labels=d.brands.split(',').map(s=>s.trim()).filter(Boolean).flatMap(make=>
+      (d.model_rules[make.toLowerCase()]||['']).map(model=>({make,model})));
+    return '<div class="field full"><b>Марки и модели поставщика</b><div class="vehicle-chips">'+labels.map(({make,model})=>{
+      const title=make+' · '+(model||'Все модели');
+      return '<button type="button" class="vehicle-chip" data-remove-make="'+esc(make)+'" data-remove-model="'+esc(model)+'" aria-label="Убрать '+esc(title)+'">'+esc(title)+' ×</button>';
+    }).join('')+'</div><button type="button" class="vehicle-browse" data-supplier-catalog>Добавить из каталога</button><details><summary>Ввести марки вручную</summary>'+input('brands','Марки через запятую',d.brands)+'</details></div>';
+  }
+  function changeSpecialty(make,model,remove){
+    const d=networkDraft,key=make.toLowerCase(),brands=d.brands.split(',').map(s=>s.trim()).filter(Boolean);
+    let list=brands.filter(s=>s.toLowerCase()!==key);
+    const rules=d.model_rules;const models=new Set(rules[key]||[]);
+    if(remove){models.delete(model);if(models.size)list.push(make);}
+    else{list.push(make);if(model)models.add(model);else models.clear();}
+    if(models.size)rules[key]=Array.from(models);else delete rules[key];
+    d.brands=list.join(', ');edited=true;render();
+    root.querySelector('[data-supplier-catalog]')?.focus();
   }
   function networkHtml(){
     const d=networkDraft;
@@ -38,7 +55,7 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     return title+alert+'<div class="supplier-layout"><section class="surface detail-body"><h2 class="section-title">Сеть поставщиков</h2>'+
       ((network.suppliers||[]).map(s=>'<button type="button" class="supplier-row" data-flow="pick" data-value="'+esc(s.id)+'" aria-pressed="'+(String(s.id)===selected)+'"><b>'+esc(s.name)+'</b><small>'+esc((s.brands||[]).join(', ')||'Марки не указаны')+'</small><small>'+(!s.active?'Доступ отключён':s.enabled&&s.routing_enabled!==false?'Принимает запросы':'Рассылка выключена')+'</small></button>').join('')||'<p>Добавьте участника с ролью «Поставщик» в разделе «Команда».</p>')+
       '</section><section class="surface detail-body">'+(d?'<form id="wf-terms"><h2 class="section-title">'+esc(d.name)+'</h2><fieldset class="fields">'+
-      (d.owned?input('brands','Марки через запятую',d.brands)+'<label class="check field"><input data-wf="enabled" type="checkbox" '+(d.enabled?'checked':'')+'>Получает запросы</label>':'')+
+      (d.owned?specialties(d)+'<label class="check field"><input data-wf="enabled" type="checkbox" '+(d.enabled?'checked':'')+'>Получает запросы</label>':'')+
       '<label class="check field"><input data-wf="routing_enabled" type="checkbox" '+(d.routing_enabled!==false?'checked':'')+'>Включить в рассылки этого салона</label>'+
       '<label class="field">Валюта закупки<select data-wf="currency">'+currencies.map(c=>'<option '+(c===d.currency?'selected':'')+'>'+c+'</option>').join('')+'</select></label>'+
       Object.entries(fees).map(([k,label])=>input(k,label+', ₽',d.fees[k]??0,'number','min="0" max="1000000000" step="0.01" required')).join('')+'</fieldset><p class="footnote">Суммы подставляются в новые расчёты этого поставщика. Менеджер проверяет расходы и курс перед сохранением варианта.</p><button class="btn primary">Сохранить тариф</button></form>':'<p>Выберите поставщика для настройки тарифов.</p>')+'</section></div>'+
@@ -63,6 +80,12 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     return input('listingPhone','Телефон продавца',v.listingPhone,'tel','placeholder="+7"')+
       '<label class="field">Расчёт стороны<select data-wf="listingMode"><option value="itemized">Цена закупки</option><option value="turnkey" '+(v.listingMode==='turnkey'?'selected':'')+'>Под ключ</option></select></label>'+
       '<details><summary>Характеристики объявления</summary><div class="fields">'+Object.entries(window.PodborLots.attrs).map(([key,label])=>input('listing_'+key,label,v['listing_'+key],['year','mileage'].includes(key)?'number':'text')).join('')+'</div></details>';
+  }
+  function deliveryHtml(){
+    if(!inbox||!Object.hasOwn(inbox,'eligible'))return '';
+    const threads=(inbox.threads||[]).map(t=>({name:t.name,state:t.delivery,replied:t.messages.some(m=>m.incoming)}));
+    const progress=window.requestProgress({threads,eligible:inbox.eligible},[],[],request()?.status);
+    return '<section class="domain-box delivery-overview"><h3>Запрос поставщикам</h3><b>'+esc(progress.title)+'</b>'+progress.rows.map(row=>'<div class="route-row"><span>'+esc(row.name)+'</span><small>'+esc(row.label)+'</small></div>').join('')+(!threads.length&&!inbox.eligible?'<p>Нет подходящих поставщиков. Сообщите администратору марку и модель.</p>':'')+'</section>';
   }
   function inboxHtml(){
     const alert=error?'<p role="alert" class="error">'+esc(error)+'</p>':'';
@@ -92,7 +115,7 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     const answered=threads.filter(t=>t.messages?.some(m=>m.incoming)).length;
     const filterPanel=inbox.lot_media&&writable?'<details class="domain-box"><summary>Фильтры подбора'+(Object.keys(spec.filters||{}).length?' · '+Object.keys(spec.filters).length:'')+'</summary><form id="wf-filters"><div class="lot-filter-fields">'+window.PodborLotTools.inputs(spec.filters)+'</div><button class="btn small" type="submit">Применить фильтры</button></form></details>':'';
     return orderHtml(inbox.order)+selection+feedback+filterPanel+(inbox.manager_flow?window.PodborLots.comparison(request()||{},inbox,domain().options()):'')+sourcePanel+(inbox.manager_flow?window.PodborLots.callQueue(inbox.listings,writable):'')+'<section class="wf-inbox"><div class="row between"><h3>Ответили '+answered+' из '+threads.length+'</h3>'+action('refresh','Обновить ответы')+'</div>'+alert+(writable?search:'')+
-      (threads.length?'<label class="field">Диалог<select data-wf="thread">'+(!thread?'<option value="">Выберите поставщика</option>':'')+threads.map(t=>'<option value="'+esc(t.id)+'" '+(t.id===thread?'selected':'')+'>'+esc(t.name)+' · '+esc(t.code)+'</option>').join('')+'</select></label>':'<p class="footnote">Диалогов пока нет. Проверьте марку и включённые профили поставщиков.</p>')+
+      (threads.length?'<label class="field">Диалог<select data-wf="thread">'+(!thread?'<option value="">Выберите поставщика</option>':'')+threads.map(t=>'<option value="'+esc(t.id)+'" '+(t.id===thread?'selected':'')+'>'+esc(t.name)+' · '+esc(t.code)+'</option>').join('')+'</select></label>':'<p class="footnote">Запрос поставщикам ещё не отправлен.</p>')+
       (t?'<p class="footnote">Первый запрос · '+esc(states[t.delivery]||'Подготовлен')+'</p><ol class="wf-log">'+messages+'</ol>'+(writable?'<form id="wf-reply"><label class="field">Ответ через бота<textarea data-wf="reply" required maxlength="2500" placeholder="Уточните состояние, цену или срок">'+esc(v.reply||'')+'</textarea></label><button class="btn small">Отправить поставщику</button></form>':''):'')+
       '</section>';
   }
@@ -165,6 +188,9 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     if(el.dataset.wf==='thread'){if(formValues.reply?.trim()&&!confirm('Закрыть черновик ответа?')){el.value=thread;return;}thread=el.value;delete formValues.reply;delete tokens.reply;render();}
   });
   root.addEventListener('click',event=>{
+    const catalog=event.target.closest('[data-supplier-catalog]'),chip=event.target.closest('[data-remove-make]');
+    if(catalog){window.VehicleCatalog.open(catalog,(make,model)=>changeSpecialty(make,model,false),true);return;}
+    if(chip){changeSpecialty(chip.dataset.removeMake,chip.dataset.removeModel,true);return;}
     const el=event.target.closest('[data-flow]');if(!el)return;
     const act=el.dataset.flow,val=el.dataset.value;
     run(async()=>{
@@ -201,7 +227,7 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
       }
       if(form.id==='wf-terms'){
         const d=networkDraft;await op('terms.save',{id:d.id,revision:d.revision,enabled:d.enabled,routing_enabled:d.routing_enabled!==false,currency:d.currency,
-          brands:d.brands.split(',').map(s=>s.trim()).filter(Boolean),fees:Object.fromEntries(Object.keys(fees).map(k=>[k,Number(d.fees[k]||0)]))});
+          brands:d.brands.split(',').map(s=>s.trim()).filter(Boolean),model_rules:Object.fromEntries(Object.entries(d.model_rules).filter(([brand])=>d.brands.split(',').some(s=>s.trim().toLowerCase()===brand))),fees:Object.fromEntries(Object.keys(fees).map(k=>[k,Number(d.fees[k]||0)]))});
         await networkLoad();flash('Тариф сохранён');return;
       }
       if(form.id==='wf-listing'){
@@ -236,7 +262,7 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
       if(form.id==='wf-dispatch'){
         const spec=inbox.spec||{};
         const q={request_id:id,model:request()?.model,brand:formValues.brand??spec.brand??'',color:formValues.color??spec.color??'',trim:formValues.trim??spec.trim??'',filters:spec.filters||{}};
-        const picked=await window.PodborLotTools.route(api,q,false);if(!picked)return;
+        const picked=await window.PodborLotTools.route(api,q,false,actor?.()?.role);if(!picked)return;
         const j=await op('dispatch',{...q,...picked});flash('Новых запросов в очереди: '+j.queued);
       }
       edited=false;await refresh();
@@ -251,5 +277,5 @@ window.PodborWorkflow = function({api,esc,render,flash,request,domain,isBusy,for
     }
     return d;
   }
-  return {savePhotos,extended:()=>!!inbox?.manager_flow,reset,load,networkLoad,networkHtml,policyHtml,inboxHtml,photoPicker,existingPhotos,dirty:()=>edited,busy:()=>busy};
+  return {savePhotos,extended:()=>!!inbox?.manager_flow,reset,load,networkLoad,networkHtml,policyHtml,deliveryHtml,inboxHtml,photoPicker,existingPhotos,dirty:()=>edited,busy:()=>busy};
 };

@@ -1,0 +1,17 @@
+.request-status{width:100%;display:flex;align-items:center;gap:12px;min-height:48px;padding:8px 12px;border:1px solid var(--border,#ced5df);border-radius:8px;background:var(--card);color:inherit;text-align:left;font:inherit;cursor:pointer}
+.request-status span{flex:1}.request-status strong{padding:4px 10px;border-radius:6px;font-size:14px}.request-status svg{color:var(--muted-foreground)}
+.mini-work{--line:var(--border,#d4dae2);--ink:var(--foreground);--muted-text:var(--muted-foreground)}
+.mini-work .domain-area{display:grid;gap:12px;min-width:0}.mini-work .domain-area>.row:first-of-type,.mini-work .divider{display:none}
+.mini-work .domain-box,.mini-work .wf-inbox,.mini-work .order-card,.mini-work .domain-area>article{background:var(--card);padding:14px;border:1px solid var(--line);border-radius:12px;min-width:0}
+.mini-work summary{cursor:pointer;min-height:36px;font-weight:600}.mini-work h3,.mini-work h4{margin:8px 0}.mini-work fieldset{margin:0;padding:0;border:0}
+.mini-work .fields,.mini-work .field,.mini-work .domain-list,.mini-work .cost-breakdown{display:grid;gap:8px}.mini-work .fields{margin:10px 0;gap:12px}
+.mini-work .field input:not([type=checkbox]),.mini-work select,.mini-work textarea{width:100%;box-sizing:border-box;font:inherit;padding:9px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:inherit;min-height:42px}
+.mini-work .row{flex-wrap:wrap}.mini-work .between{justify-content:space-between}.mini-work .btn{width:auto;min-height:42px;padding:8px 12px;border:1px solid var(--line);background:var(--card);color:inherit}
+.mini-work .btn.primary{background:var(--accent,#355a85);color:white}.mini-work .sub,.mini-work small,.mini-work .footnote{display:block;color:var(--muted-text);font-size:13px}.mini-work .error{color:var(--destructive)}
+.mini-work .wf-photos{display:flex;flex-wrap:wrap;gap:6px}.mini-work .wf-photos img{max-width:96px;height:auto}.mini-work .wf-message p{white-space:pre-wrap;overflow-wrap:anywhere}
+.mini-work .cost-breakdown>div{display:flex;justify-content:space-between;gap:10px}.mini-work .lot-compare{max-width:100%;overflow-x:auto}.mini-work button{cursor:pointer}.mini-work article,.mini-work form{overflow-wrap:anywhere}
+
+.mini-work .wf-inbox{display:grid;gap:12px}.mini-work .wf-log{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+.mini-work .wf-message{border-top:1px solid var(--line);padding:10px 0 0}.mini-work .wf-message p{margin:5px 0 8px;line-height:1.45}
+.mini-work .detail-actions,.mini-work .wf-photos{display:flex;flex-wrap:wrap;gap:6px}.mini-work .wf-message [data-flow="use"]{background:var(--primary);color:var(--primary-foreground)}
+.mini-work .btn:disabled{opacity:.55;cursor:default}

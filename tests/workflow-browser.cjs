@@ -76,6 +76,10 @@ const shot=(page,file)=>artifacts?page.screenshot({path:path.join(artifacts,file
   await before.locator('#domainSettingsForm').waitFor();await shot(before,'settings-before.png');await before.close();
  }
  await page.goto(home+'admin.html?tab=settings');
+ const extraModels=page.locator('dealer-vehicle-catalog');await extraModels.locator('summary').click();
+ await extraModels.locator('[name=country]').fill('Швеция');await extraModels.locator('[name=make]').fill('Volvo');await extraModels.locator('[name=model]').fill('Тестовый прототип');await extraModels.getByRole('button',{name:'Добавить модель'}).click();await extraModels.getByText('Модель добавлена в каталог салона').waitFor();
+ assert.equal(rpc('crm_workflow',{p_actor:manager,p_action:'catalog',p:{}}).models[0].model,'Тестовый прототип');
+ assert.throws(()=>rpc('crm_workflow',{p_actor:manager,p_action:'catalog.add',p:{country:'X',make:'Y',model:'Z'}}),/crm_forbidden/);await extraModels.locator('summary').click();
  const settings=page.locator('#domainSettingsForm');
  await settings.getByLabel('Минимальная маржа от закупки, %').fill('7.5');
  await settings.getByLabel('Что указать в ответе').fill('Отдельно укажите доставку до Казани.');
@@ -100,13 +104,18 @@ const shot=(page,file)=>artifacts?page.screenshot({path:path.join(artifacts,file
  assert(await staffSettings.locator('[data-operation="offer_note"]').isDisabled());assert.equal(await staffSettings.getByRole('button',{name:'Сохранить настройки'}).count(),0);await staffSettings.close();
  await page.getByRole('button',{name:'Поставщики',exact:true}).click();
  await page.locator('[data-flow="pick"][data-value="'+supplier+'"]').click();
- await page.locator('[data-wf="brands"]').fill('Тойота');await page.locator('[data-wf="enabled"]').check();
+ await page.locator('[data-supplier-catalog]').click();
+ const catalog=page.locator('.vehicle-dialog');await catalog.locator('select[name=country]').selectOption('Япония');await catalog.locator('select[name=make]').selectOption('Toyota');
+ await shot(page,'catalog-supplier.png');await catalog.getByRole('button',{name:'Toyota Camry Япония',exact:true}).click();await page.locator('[data-wf="enabled"]').check();
  await page.locator('[data-wf="currency"]').selectOption('JPY');
  await page.locator('[data-wf="logistics"]').fill('90000');await page.locator('[data-wf="duty"]').fill('80000');
  await page.getByRole('button',{name:'Сохранить тариф'}).click();await page.getByText('Тариф сохранён',{exact:true}).waitFor();
  await shot(page,'supplier-tariff.png');
+ const eligibleFor=(model)=>rpc('crm_workflow',{p_actor:manager,p_action:'recipients',p:{brand:'Toyota',model}}).recipients;
+ assert(eligibleFor('Camry').some(x=>x.name==='Поставщик Япония'));assert(eligibleFor('Тойота Камри').some(x=>x.name==='Поставщик Япония'));assert(!eligibleFor('Toyota Corolla').some(x=>x.name==='Поставщик Япония'));
  rpc('crm_workflow',{p_actor:actor,p_action:'terms.save',p:{id:String(second),revision:0,brands:['Toyota'],currency:'CNY',enabled:true,fees:{logistics:100000,duty:0,documents:0,recycling:0,commission:0}}});
  const managerPhone=await pageAt(root,manager,phone);await managerPhone.goto(home);
+ const beforeDemo=bot.messages.length;await managerPhone.locator('[data-a="examples"][data-v="demo"]').click();await managerPhone.getByRole('button',{name:'Попробовать ответ поставщика'}).click();await managerPhone.getByRole('button',{name:'Есть вариант'}).click();await managerPhone.getByRole('button',{name:'Отправить пример ответа'}).click();await managerPhone.getByRole('button',{name:'Посмотреть ответ как менеджер'}).click();await managerPhone.getByRole('button',{name:'Добавить в подбор'}).click();await managerPhone.getByRole('button',{name:'Посмотреть ответ П-07'}).waitFor();assert.equal(bot.messages.length,beforeDemo);assert.equal(dbRead("select to_jsonb(count(*)) from crm_requests where created_by=:'manager'",{manager}),0);await managerPhone.goto(home);
  await managerPhone.getByRole('button',{name:'Новая заявка',exact:true}).click();
  assert.equal(await managerPhone.locator('[aria-required=true]').count(),4);assert.equal(await managerPhone.locator('#fg').count(),0);
  await managerPhone.getByRole('button',{name:'Из сообщения',exact:true}).click();await managerPhone.locator('#lt').fill('Меня зовут Ирина. Ищу Toyota Camry до 2 млн рублей.');await managerPhone.locator('#fn').fill('Имя от менеджера');await managerPhone.getByRole('button',{name:'Заполнить пустые поля по тексту'}).click();await managerPhone.waitForFunction(()=>document.querySelector('#fb')?.value==='2000000');assert.equal(await managerPhone.locator('#fn').inputValue(),'Имя от менеджера');assert.equal(await managerPhone.locator('#fm').inputValue(),'Toyota Camry');
@@ -128,9 +137,13 @@ const shot=(page,file)=>artifacts?page.screenshot({path:path.join(artifacts,file
  assert(bot.messages.some(m=>String(m.chat_id)===String(supplier)&&m.text?.includes('Отдельно укажите доставку до Казани.')));
  const tid=dbRead("select to_jsonb(id) from bot_threads where request_id=:'rid' and supplier_id=:'supplier';",{rid,supplier});assert(tid);await bot.send(manager,{text:'/requests'});await bot.click(manager,keys(last(manager)).find(b=>b.callback_data==='request:'+rid).callback_data);assert.equal(new URL(keys(last(manager))[0].web_app.url).searchParams.get('request'),rid);await bot.send(supplier,{text:'/threads'});await bot.click(supplier,keys(last(supplier)).find(b=>b.callback_data==='thread:'+tid).callback_data);assert.match(last(supplier).text,/голосовое/);assert.equal(dbRead("select to_jsonb(count(*)) from bot_threads where request_id=:'rid';",{rid}),1);
  const entry=new URL(opened.reply_markup.inline_keyboard[0][0].web_app.url);assert.equal(entry.searchParams.get('request'),rid);
- await managerPhone.goto(home+'admin.html'+entry.search);await managerPhone.getByRole('button',{name:'Подбор и КП'}).waitFor();
+ if(process.env.CATALOG_BEFORE){const before=await pageAt(path.resolve(process.env.CATALOG_BEFORE),admin,phone);await before.goto(home);await before.locator('[data-a="viewCabinet"][data-v="manager"]').click();await before.locator('[data-a="openRequest"]').first().click();await before.locator('[data-a="openWorkCrm"]').scrollIntoViewIfNeeded();await shot(before,'request-before.png');await before.close();}
+ const asManager=await pageAt(root,admin,phone);await asManager.goto(home);await asManager.locator('[data-a="viewCabinet"][data-v="admin"]').click();await asManager.getByRole('heading',{name:'Доступы'}).waitFor();await asManager.locator('[data-a="cabinets"],[data-a="tab"][data-v="cabinets"]').first().click();await asManager.locator('[data-a="viewCabinet"][data-v="manager"]').click();await asManager.locator('[data-a="openRequest"]').first().click();
+ await asManager.locator('.request-status').click();await asManager.locator('[data-a="back"]').first().click();await asManager.getByText('Отправлено поставщику',{exact:true}).waitFor();await asManager.locator('[data-a="openWorkCrm"]').scrollIntoViewIfNeeded();await shot(asManager,'request-sent.png');await asManager.locator('[data-a="openWorkCrm"]').click();await asManager.locator('.mini-work .wf-inbox').waitFor();assert.equal(new URL(asManager.url()).pathname,'/');await asManager.close();
+ await managerPhone.goto(home+entry.search);await managerPhone.locator('.mini-work').waitFor();assert.equal(new URL(managerPhone.url()).pathname,'/');
  await managerPhone.getByRole('button',{name:'Обновить ответы'}).waitFor();await shot(managerPhone,'manager-sourcing-mobile.png');
  const managerDesk=await pageAt(root,manager);await managerDesk.goto(home+'admin.html?request='+rid);await managerDesk.getByRole('button',{name:'Обновить ответы'}).waitFor();
+ await managerDesk.locator('[data-action="requestTab"][data-id="client"]').click();await managerDesk.locator('.delivery-overview').getByText('Отправлено поставщику',{exact:true}).waitFor();await managerDesk.locator('[data-action="requestTab"][data-id="options"]').click();
  assert.equal(await managerDesk.locator('[data-action="newUser"]').count(),0);
  await managerDesk.getByText('Параметры запроса поставщикам',{exact:true}).click();
  await managerDesk.locator('#wf-dispatch button').click();
@@ -147,6 +160,7 @@ const shot=(page,file)=>artifacts?page.screenshot({path:path.join(artifacts,file
  const jpeg=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=320;canvas.height=160;const g=canvas.getContext('2d');g.fillStyle='#eee';g.fillRect(0,0,320,160);g.fillStyle='#225';g.font='20px sans-serif';g.fillText('Тестовое фото · Camry',30,86);return canvas.toDataURL('image/jpeg').split(',')[1];});
  bot.photo(Buffer.from(jpeg,'base64'));
  await bot.send(supplier,{reply_to_message:{message_id:original.message_id},caption:'Год: 2022\nПробег: 38000 км\nЦена: 1800000 JPY\nПоколение: XV70\nДоставка: 50000 RUB\nСрок: 45 дней',photo:[{width:320,height:160,file_size:Buffer.from(jpeg,'base64').length,file_id:'car'}]});
+ await managerPhone.locator('[data-a="back"]').first().click();await managerPhone.getByText('Ответили 1 из 1',{exact:true}).waitFor();await managerPhone.getByRole('button',{name:'Посмотреть ответы'}).click();await managerPhone.locator('.wf-inbox [data-flow="use"]').waitFor();await shot(managerPhone,'request-reply.png');
  const ack=bot.messages.find(m=>String(m.chat_id)===String(supplier)&&m.text.includes('Ответ сохранён'));assert(ack);
  await bot.click(supplier,ack.reply_markup.inline_keyboard[0][0].callback_data);
  await bot.send(supplier,{photo:[{width:320,height:160,file_size:Buffer.from(jpeg,'base64').length,file_id:'car'}]});
@@ -167,18 +181,18 @@ const shot=(page,file)=>artifacts?page.screenshot({path:path.join(artifacts,file
  const received=managerDesk.locator('.wf-message').filter({hasText:'Около трёх недель.'});
  await received.getByText('Поставщик · голосовое',{exact:false}).waitFor();
  assert.equal(await received.getByRole('button',{name:'Проверить и рассчитать'}).count(),0);
- await managerDesk.getByRole('button',{name:'Проверить и рассчитать'}).click();
- assert.equal(await managerDesk.locator('#domain-logistics').inputValue(),'50000');assert.equal(await managerDesk.locator('#domain-currency').inputValue(),'JPY');
- await managerDesk.getByRole('checkbox',{name:'Включить в КП'}).first().check();await managerDesk.locator('[data-upload-photos]').setInputFiles([{name:'Фото салона.jpg',mimeType:'image/jpeg',buffer:Buffer.from(jpeg,'base64')}]);
- await managerDesk.waitForFunction(()=>document.querySelectorAll('[data-wf-photo]:checked').length===2);await shot(managerDesk,'photo-review.png');
- await managerDesk.locator('#domain-base_rate').fill('0.60');await managerDesk.locator('#domain-client_price').fill('1600000');await managerDesk.locator('#domain-market_median').fill('2300000');await managerDesk.locator('#costEstimate').scrollIntoViewIfNeeded();assert.equal((await managerDesk.locator('#domainEstimate').innerText()).replace(/[^0-9]/g,''),'1231600');await shot(managerDesk,'manager-delivery.png');
- await managerDesk.locator('#domainOptionForm button[type="submit"]').click();
+ await managerPhone.getByRole('button',{name:'Проверить и рассчитать'}).click();
+ assert.equal(await managerPhone.locator('#domain-logistics').inputValue(),'50000');assert.equal(await managerPhone.locator('#domain-currency').inputValue(),'JPY');
+ await managerPhone.getByRole('checkbox',{name:'Включить в КП'}).first().check();await managerPhone.locator('[data-upload-photos]').setInputFiles([{name:'Фото салона.jpg',mimeType:'image/jpeg',buffer:Buffer.from(jpeg,'base64')}]);
+ await managerPhone.waitForFunction(()=>document.querySelectorAll('[data-wf-photo]:checked').length===2);await shot(managerPhone,'photo-review.png');
+ await managerPhone.locator('#domain-base_rate').fill('0.60');await managerPhone.locator('#domain-client_price').fill('1600000');await managerPhone.locator('#domain-market_median').fill('2300000');await managerPhone.locator('#costEstimate').scrollIntoViewIfNeeded();assert.equal((await managerPhone.locator('#domainEstimate').innerText()).replace(/[^0-9]/g,''),'1231600');await shot(managerPhone,'manager-delivery.png');
+ await managerPhone.locator('#domainOptionForm button[type="submit"]').click();
  assert.equal(dbRead("select to_jsonb(total_cost) from request_options where request_id=:'rid';",{rid}),1231600);
- await managerDesk.locator('[data-domain="review"][data-decision="requested"]').click();
+ await managerPhone.locator('[data-domain="review"][data-decision="requested"]').click();
  await page.goto('about:blank');await bot.drain();
  const approval=bot.messages.findLast(m=>String(m.chat_id)===String(actor)&&m.text.startsWith('Нужно согласовать цену'));assert(approval);
  assert.equal(keys(approval)[0].style,'primary');const approvalLink=new URL(keys(approval)[0].web_app.url);assert.equal(approvalLink.searchParams.get('request'),rid);
- await page.goto(home+'admin.html'+approvalLink.search);await page.locator('[data-domain="review"][data-decision="approved"]').click();await page.getByText('Готов к КП',{exact:true}).waitFor();await shot(page,'owner-approval.png');
+ await page.goto(home+approvalLink.search);await page.locator('[data-domain="review"][data-decision="approved"]').click();await page.getByText('Готов к КП',{exact:true}).waitFor();await shot(page,'owner-approval.png');
  await bot.drain();assert.match(last(manager).text,/Цена согласована/);await managerDesk.locator('[data-domain="reload"]').click();
  await managerDesk.getByText('Готов к КП',{exact:true}).waitFor();const supplierOption=await managerDesk.locator('[data-domain-select]').getAttribute('data-domain-select');
  const sourcePanel=managerDesk.locator('details').filter({has:managerDesk.locator('#wf-listing')});
@@ -209,12 +223,13 @@ const shot=(page,file)=>artifacts?page.screenshot({path:path.join(artifacts,file
  await managerDesk.getByText('Фильтры сохранены',{exact:true}).waitFor();await managerDesk.locator('#lot-comparison summary').click();
  assert.equal(await managerDesk.locator('.lot-compare:visible').count(),1);await managerDesk.locator('[data-show-outside]').check();await managerDesk.getByText('Другое поколение',{exact:true}).waitFor();await shot(managerDesk,'compare.png');
  assert.equal(dbRead("select to_jsonb(total_cost) from request_options where request_id=:'rid' and input->>'quote_mode'='turnkey';",{rid}),2400000);
- for(const box of await managerDesk.locator('[data-domain-select]').all())await box.check();
- await managerDesk.locator('[data-domain="offer"]').click();
- await managerDesk.locator('[data-domain="download"]').waitFor();const promise=managerDesk.waitForEvent('download');await managerDesk.locator('[data-domain="download"]').click();const pdf=await promise;
- if(artifacts){await pdf.saveAs(path.join(artifacts,'offer.pdf'));const pdfText=execFileSync('pdftotext',['-layout',path.join(artifacts,'offer.pdf'),'-'],{encoding:'utf8'});assert.match(pdfText,/Стоимость доставки согласована до Казани/);assert(pdfText.split('\f').some(page=>page.includes('2. Camry в Москве')&&/2\s900\s000 ₽/.test(page)));const imgs=execFileSync('pdfimages',['-list',path.join(artifacts,'offer.pdf')],{encoding:'utf8'});assert.match(imgs,/image\s+320\s+160/);assert.equal(await managerDesk.evaluate(()=>document.querySelectorAll('[data-domain-select]').length),2);
+ await managerPhone.goto(home+'?request='+rid);await managerPhone.locator('[data-domain-select]').nth(1).waitFor();
+ for(const box of await managerPhone.locator('[data-domain-select]').all())await box.check();
+ await managerPhone.locator('[data-domain="offer"]').click();
+ await managerPhone.locator('[data-domain="download"]').waitFor();const promise=managerPhone.waitForEvent('download');await managerPhone.locator('[data-domain="download"]').click();const pdf=await promise;
+ if(artifacts){await pdf.saveAs(path.join(artifacts,'offer.pdf'));const pdfText=execFileSync('pdftotext',['-layout',path.join(artifacts,'offer.pdf'),'-'],{encoding:'utf8'});assert.match(pdfText,/Стоимость доставки согласована до Казани/);assert(pdfText.split('\f').some(page=>page.includes('2. Camry в Москве')&&/2\s900\s000 ₽/.test(page)));const imgs=execFileSync('pdfimages',['-list',path.join(artifacts,'offer.pdf')],{encoding:'utf8'});assert.match(imgs,/image\s+320\s+160/);assert.equal(await managerPhone.evaluate(()=>document.querySelectorAll('[data-domain-select]').length),2);
  assert.equal(dbRead("select to_jsonb(cardinality(photo_ids)) from request_options where id=:'id';",{id:supplierOption}),2);}
- await managerDesk.locator('[data-domain="sent"]').click();await managerDesk.locator('tr[data-action="request"]').first().click();await managerDesk.getByRole('button',{name:'Подбор и КП'}).click();
+ await managerPhone.locator('[data-domain="sent"]').click();await managerPhone.locator('[data-a="openRequest"]').first().waitFor();await managerDesk.reload();await managerDesk.getByRole('button',{name:'Обновить ответы'}).waitFor();
  assert.equal(dbRead("select to_jsonb(abs(extract(epoch from (r.next_contact_at-f.sent_at))-4*86400)<1) from crm_requests r join request_offers f on f.request_id=r.id where r.id=:'rid' and f.sent_at is not null limit 1;",{rid}),true);
  await managerDesk.locator('[data-wf="outcome"]').selectOption('lost');await managerDesk.getByLabel('Причина отказа',{exact:true}).selectOption('Нет нужной комплектации');
  await managerDesk.locator('[data-wf="outcome"]').selectOption('won');await managerDesk.locator('[data-wf="car"]').selectOption({value:await managerDesk.locator('[data-wf="car"] option').evaluateAll((opts,id)=>opts.find(o=>o.value.endsWith('/'+id)).value,supplierOption)});await managerDesk.locator('[data-wf="note"]').fill('Клиент подтвердил заказ');await managerDesk.getByRole('button',{name:'Записать результат'}).click();
@@ -236,11 +251,11 @@ const shot=(page,file)=>artifacts?page.screenshot({path:path.join(artifacts,file
  // Create from each form with no bot command. Both records must be visible to the same manager.
  await managerPhone.goto(home);await managerPhone.getByRole('button',{name:'Новая заявка',exact:true}).click();
  await managerPhone.locator('#fn').fill('Из мини-приложения');await managerPhone.locator('#fp').fill('89991110002');
- await managerPhone.locator('#fm').fill('Kia Rio');await managerPhone.locator('#fb').fill('1400000');
+ await managerPhone.locator('#fm').fill('прототип');await managerPhone.getByRole('option',{name:'Volvo Тестовый прототип Швеция'}).waitFor();await managerPhone.locator('#fm').fill('киа рио');await managerPhone.getByRole('option',{name:'Kia Rio Республика Корея',exact:true}).waitFor();await shot(managerPhone,'catalog-request.png');await managerPhone.locator('#fm').press('ArrowDown');await managerPhone.locator('#fm').press('Enter');assert.equal(await managerPhone.locator('#fm').inputValue(),'Kia Rio');await managerPhone.locator('#fb').fill('1400000');
  await managerPhone.locator('[data-a="leadConsent"]').click();await managerPhone.getByRole('button',{name:'Выбрать поставщиков',exact:true}).click();
- await managerPhone.getByRole('button',{name:'Создать заявку без рассылки'}).click();await managerPhone.getByRole('heading',{name:'Kia Rio'}).waitFor();
+ await managerPhone.getByRole('button',{name:'Создать заявку без рассылки'}).click();await managerPhone.getByRole('heading',{name:'Kia Rio'}).waitFor();await managerPhone.getByText('Запрос не отправлен',{exact:true}).waitFor();await managerPhone.locator('[data-a="openWorkCrm"]').scrollIntoViewIfNeeded();await managerPhone.locator('.toast').waitFor({state:'hidden',timeout:6500});await shot(managerPhone,'request-no-recipients.png');await managerPhone.getByRole('button',{name:'Добавить вариант вручную'}).click();await managerPhone.locator('#domainOptionForm').waitFor();
  await page.goto(home+'admin.html');await page.locator('[data-action="newRequest"]').first().click();
- await page.locator('#d-client_name').fill('Из кабинета');await page.locator('#d-phone').fill('79991110003');await page.locator('#d-model').fill('Kia Soul');
+ await page.locator('#d-client_name').fill('Из кабинета');await page.locator('#d-phone').fill('79991110003');await page.locator('[data-vehicle-field="d-model"]').click();const chooser=page.locator('.vehicle-dialog');await chooser.locator('select[name=country]').selectOption('Республика Корея');await chooser.locator('select[name=make]').selectOption('Kia');await chooser.getByRole('button',{name:'Kia Soul Республика Корея',exact:true}).click();
  await page.locator('#d-budget').fill('1700000');await page.locator('#d-assigned_to').selectOption(String(manager));
  await page.locator('#consent').check();await page.locator('#requestForm button[type=submit]').click();
  await page.getByRole('button',{name:'Создать заявку без рассылки'}).click();await page.locator('.detail-header h2').filter({hasText:'Kia Soul'}).waitFor();

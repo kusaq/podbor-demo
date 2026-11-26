@@ -199,7 +199,7 @@ Deno.serve(async (req) => {
   if (action?.startsWith('workflow.')) {
     if (!['admin','owner','manager'].includes(me.role)) return json({error:'crm_forbidden'},403);
     const op=action.slice(9);
-    if (!['recipients','network','terms.save','policy.save','inbox','choose_car','dispatch','photo','option.withPhotos','option.fromReply','reply','search.retry','listing.save','listing.call'].includes(op)) return json({error:'backend_bad_action'},400);
+    if (!['catalog','catalog.add','catalog.remove','delivery','recipients','network','terms.save','policy.save','inbox','choose_car','dispatch','photo','option.withPhotos','option.fromReply','reply','search.retry','listing.save','listing.call'].includes(op)) return json({error:'backend_bad_action'},400);
     if (JSON.stringify(p).length>(op==='option.withPhotos'?3600000:20000)) return json({error:'backend_bad_data'},400);
     if (op==='choose_car') {
       const ids=[p.request_id,p.offer,p.option,p.token];

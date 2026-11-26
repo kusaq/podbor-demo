@@ -9,10 +9,17 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script defer src="assets/pdf-lib.min.js"></script>
 <script defer src="assets/fontkit.umd.min.js"></script>
-<link rel="stylesheet" href="lot-tools.css?v=1">
-<script defer src="lot-tools.js?v=1"></script>
+<link rel="stylesheet" href="vehicle-catalog.css?v=20261126">
+<script defer src="vehicle-catalog.js?v=20261126"></script>
+<link rel="stylesheet" href="lot-tools.css?v=20261126">
+<script defer src="lot-tools.js?v=20261126"></script>
 <script defer src="lot-review.js?v=20261125routing"></script>
-<script defer src="pdf.js"></script>
+<script defer src="pdf.js?v=20261126"></script>
+<script defer src="admin-workflow.js?v=20261126"></script>
+<script defer src="admin-domain.js?v=20261126"></script>
+<script defer src="request-progress.js?v=20261126"></script>
+<script defer src="mini-work.js?v=20261126"></script>
+<link rel="stylesheet" href="mini-work.css?v=20261126">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <style>
@@ -256,6 +263,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{
 /* ---------- иконки ---------- */
 var P = {
   back: '<path d="m15 18-6-6 6-6"/>', next: '<path d="m9 18 6-6-6-6"/>', down: '<path d="m6 9 6 6 6-6"/>',
+  pencil: '<path d="m4 16-1 5 5-1L20 8l-4-4L4 16Zm10-10 4 4"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   out: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
   car: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
@@ -385,7 +393,7 @@ var API_KEY = 'sb_publishable_YH4c53SnOnZWnRXwNNnB2Q_vijUYTYi';
 function online() { return !!(API_URL && TG && TG.initData); }
 async function call(action, payload) {
   if(action==='crm.save'&&payload?.search&&S.canRoute&&!payload.search.recipients){
-    const picked=await window.PodborLotTools.route(call,{...payload.search,model:payload.data.model},true);
+    const picked=await window.PodborLotTools.route(call,{...payload.search,model:payload.data.model},true,S.role);
     if(!picked)throw new Error('Создание отменено');
     payload={...payload,search:{...payload.search,...picked}};
   }
@@ -414,12 +422,28 @@ function applyMocks(rows) {
     return { key: key, title: d.title || 'Без названия', sub: d.sub || '', mgr: d.mgr || '', when: d.when || '', search: sr };
   }));
 }
+async function openLinkedRequest(){
+  const link=new URLSearchParams(location.search), id=link.get('request');
+  if(!id||S.role==='supplier')return;
+  try{
+    if(document.readyState==='loading')await new Promise(resolve=>document.addEventListener('DOMContentLoaded',resolve,{once:true}));
+    const {request}=await call('crm.detail',{id});const key=mergeCrmRequest(request);
+    if(S.role==='admin')S.role=link.get('section')==='price'?'owner':'manager';
+    S.requestKey=key;S.showExamples=false;S.screen='request';S.stack=['list'];render();
+    await A.loadRealOptions(id);
+    const section=link.get('section');
+    if(section==='client'){return;}
+    S.workSection=section||(link.get('thread')?'thread':'options');await A.openWorkCrm(id);
+  }catch(e){say(errText(e));}
+}
 function enterOnline() {
   S.screen = 'boot'; S.bootErr = ''; render();
   S.tg = TG.initDataUnsafe && TG.initDataUnsafe.user || null;
   call('me').then(function (j) {
+    const connectCatalog=()=>window.VehicleCatalog?.connect(call,String(j.me.tg_id)+'/'+j.me.company_id);
+    if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',connectCatalog,{once:true});else connectCatalog();
     S.me = fromRow(j.me); S.canRoute=!!j.me.supplier_routing; S.role = S.me.role; restoreDemoSettings(); applyMocks(j.mocks || []); loadRequests();
-    return loadWorkspace().then(function () { return loadCrmRequests(); }).then(function () { S.screen = homeOf(S.role); S.stack = []; if (S.role === 'admin' || S.role === 'owner') return refreshUsers(); });
+    return loadWorkspace().then(function () { return loadCrmRequests(); }).then(function () { S.screen = homeOf(S.role); S.stack = []; if (S.role === 'admin' || S.role === 'owner') return refreshUsers(); }).then(openLinkedRequest);
   }).catch(function (e) {
     S.me = null; S.screen = 'noaccess';
     if (e.code !== 'no_access') S.bootErr = errText(e);
@@ -510,7 +534,7 @@ function visible() { return CANDS.filter(function (c) { return answered(c) && !d
 function pickedList() { return visible().filter(function (c) { return S.picked[c.id]; }); }
 function clientStatusChip(key, asBtn) {
   var st = CST[S.cls[key].status];
-  if (asBtn) return '<button class="chip" style="' + TONE[st[1]] + '" data-a="openStatus" data-v="' + key + '">' + st[0] + ic('down', 'i-s') + '</button>';
+  if (asBtn) return '<button class="request-status" data-a="openStatus" data-v="'+esc(key)+'" aria-label="Изменить статус заявки, сейчас '+esc(st[0])+'"><span>Статус заявки</span><strong style="'+TONE[st[1]]+'">'+esc(st[0])+'</strong>'+ic('pencil','i-s')+'</button>';
   return chip(st[0], TONE[st[1]]);
 }
 
@@ -597,7 +621,7 @@ function cellsHtml() {
 }
 
 function visibleRequests() { return REQS.filter(function (r) { return !online() || (S.showExamples ? !r.custom : !!r.custom); }); }
-function exampleSwitch() { return online() ? '<div class="work-switch"><button data-a="examples" data-v="work" class="'+(!S.showExamples?'on':'')+'">Рабочие заявки</button><button data-a="examples" data-v="demo" class="'+(S.showExamples?'on':'')+'">Примеры</button></div>'+(S.showExamples?'<p class="cm">Учебные данные. Поиск, обзвон и ответы поставщиков здесь имитируются.</p>':'') : ''; }
+function exampleSwitch() { return online() ? '<div class="work-switch"><button data-a="examples" data-v="work" class="'+(!S.showExamples?'on':'')+'">Рабочие заявки</button><button data-a="examples" data-v="demo" class="'+(S.showExamples?'on':'')+'">Примеры</button></div>'+(S.showExamples?'<p class="cm">В примере Toyota Camry можно пройти путь поставщика и менеджера.</p><button class="btn white" data-a="exampleSupplier">Попробовать ответ поставщика</button>':'') : ''; }
 function vList() {
   var owner = S.role === 'owner';
   var cnt = function (f) { return visibleRequests().filter(function (r) { return f === 'all' || S.cls[r.key].status === f; }).length; };
@@ -638,7 +662,7 @@ function vLead() {
   if(S.leadMode==='quick')h += '<div class="card"><label for="lt" class="lbl">Сообщение клиента</label><textarea id="lt" class="inp" data-in="leadText" placeholder="Вставьте текст клиента">'+esc(S.leadText)+'</textarea><button class="btn white" data-a="fillLeadText">Заполнить пустые поля по тексту</button></div>';
   h += '<div class="card">'+
     requestField('fn','Имя клиента','fName','Имя клиента') + requestField('fp','Телефон','fPhone','+7 900 000 00 00','tel') +
-    requestField('fm','Марка и модель','fModel','Toyota Camry') + requestField('fb','Бюджет, ₽','fBudget','3200000','number') + '</div>';
+    '<div class="vehicle-entry">'+requestField('fm','Марка и модель','fModel','Toyota Camry')+'<button type="button" class="vehicle-browse" data-vehicle-field="fm">Выбрать из каталога</button></div>' + requestField('fb','Бюджет, ₽','fBudget','3200000','number') + '</div>';
   h += '<div class="card"><button class="btn white sb" aria-expanded="'+!!S.leadDetails+'" data-a="leadDetails">Пожелания к машине'+ic('down')+'</button>';
   if(S.leadDetails)h += requestField('fg','Поколение','fGeneration','XV70') + requestField('fy','Годы','fYears','2021-2023') +
     requestField('fk','Пробег до, км','fMileage','60000','number') + (online()?requestField('fc','Цвет','fColor','Белый')+
@@ -667,8 +691,8 @@ function vRequest() {
   if (!r) return '<div class="scroll"><div class="card">Запрос не найден</div></div>';
   var c = S.cls[r.key];
   return '<div class="scroll"><div class="card"><h2>' + esc(r.title) + '</h2><span class="cm">' + esc(c.name) + '</span>' + clientStatusChip(r.key, true) + '<dl class="kv"><dt>Телефон</dt><dd>' + esc(c.phone || 'Не указан') + '</dd><dt>Поколение</dt><dd>' + esc(r.generation || 'Уточнить') + '</dd><dt>Годы</dt><dd>' + esc(r.years || 'Уточнить') + '</dd><dt>Пробег</dt><dd>' + esc(r.mileage || 'Уточнить') + '</dd><dt>Бюджет</dt><dd>' + (r.budget ? rub(r.budget) : 'Уточнить') + '</dd><dt>Пожелания</dt><dd>' + esc(r.spec || 'Не указаны') + '</dd><dt>Ответственный</dt><dd>' + esc(r.mgr || 'Не назначен') + '</dd>' + (r.nextContactAt ? '<dt>Следующий контакт</dt><dd>' + new Date(r.nextContactAt).toLocaleString('ru-RU') + '</dd>' : '') + '</dl></div>' +
-    (r.sourceText ? '<div class="card"><b>Исходное сообщение</b><p style="white-space:pre-wrap">' + esc(r.sourceText) + '</p></div>' : '') +
-    (r.crmId ? realOptionsHtml(r.crmId) : '') + '</div>';
+    (r.crmId ? realOptionsHtml(r.crmId) : '') +
+    (r.sourceText ? '<details class="card"><summary>Исходное сообщение</summary><p style="white-space:pre-wrap">' + esc(r.sourceText) + '</p></details>' : '') + '</div>';
 }
 
 function anketa() {
@@ -754,7 +778,7 @@ function vCard() {
       var c = x.cid ? BY[x.cid] : null;
       if (c && x.order <= S.supArrived) {
         h += vcard(c, x.code + ' ' + x.geo + ', ' + c.term);
-        if (x.cid === 'p7') h += '<button class="btn b-sm" style="width:100%;background:var(--accent);color:var(--primary-hover)" data-a="go" data-v="reply">' + ic('spark', 'i-s') + 'Проверить разбор ответа П-07</button>';
+        if (x.cid === 'p7') h += '<button class="btn b-sm" style="width:100%;background:var(--accent);color:var(--primary-hover)" data-a="go" data-v="reply">' + ic('spark', 'i-s') + 'Посмотреть ответ П-07</button>';
       } else {
         waiting += '<div class="li" style="cursor:default;padding:8px 8px 8px 16px"><span class="cand-b"><span style="font-weight:600;font-size:14px">' + x.code + ' ' + x.geo + '</span>' +
           '<span class="cm" style="' + (x.alarm ? 'color:var(--destructive);font-weight:600' : '') + '">' + (c ? 'ждём ответ' : x.note) + '</span></span>' +
@@ -915,10 +939,10 @@ function vReply() {
     '<div class="bubble" style="background:var(--background);max-width:100%">Есть Camry 2022, G, пробег 29к, белая, оценка 4.5. На аукционе 2 150 000 иен, привезём за полтора или два месяца. Фото тут <span class="mask">ссылка</span>, пишите в WeChat <span class="mask">скрыто</span> или звоните <span class="mask">телефон</span></div>' +
     '<div class="row cm" style="gap:6px">' + ic('mic', 'i-s') + 'Голосовое 0:24</div>' +
     '<div class="bubble" style="background:var(--background);max-width:100%">Салон чистый, один владелец в Японии. Аукционный лист приложу.</div></div>' +
-    '<div class="card"><div class="row sb"><b>Разбор</b>' + chip('93%', TONE.good) + '</div><dl class="kv">' +
+    '<div class="card"><b>Что предложил поставщик</b><dl class="kv">' +
     '<dt>Модель</dt><dd>Camry 2.5 G, 2022</dd><dt>Поколение</dt><dd>XV70 рестайлинг</dd><dt>Пробег</dt><dd>29 000 км</dd><dt>Цвет</dt><dd>белый</dd>' +
     '<dt>Аукцион</dt><dd>¥ 2 150 000</dd><dt>Срок</dt><dd>от 45 до 60 дней</dd><dt>Себестоимость</dt><dd>2 870 000 ₽</dd></dl></div>' +
-    '<button class="btn b-acc" data-a="confirmReply">Добавить в подбор</button><button class="btn" data-a="toast" data-v="Вопрос уйдёт через бота">Уточнить у поставщика</button></div>';
+    '<button class="btn b-acc" data-a="confirmReply">Добавить в подбор</button></div>';
 }
 
 function vClient() {
@@ -1009,7 +1033,7 @@ function vCabinets() {
     ['supplier', 'Поставщик', 'Пример получения запроса и ответа с вариантом', 'box'],
     ['admin', 'Администратор', 'Пользователи и управление доступами', 'key']
   ];
-  return '<div class="scroll"><button class="btn b-pri" data-a="go" data-v="desktopLogin">CRM и админка на компьютере</button><div class="card"><b>Рабочие кабинеты</b><p class="cm">Откройте рабочие заявки или управление доступом. Учебные примеры вынесены в отдельный режим внутри списка.</p></div>' + options.map(function (r) {
+  return '<div class="scroll"><button class="btn b-pri" data-a="go" data-v="desktopLogin">CRM и админка на компьютере</button><div class="card"><b>Ваш доступ · Администратор</b><p class="cm">Откройте рабочие заявки или управление доступом. Учебные примеры вынесены в отдельный режим внутри списка.</p></div>' + options.map(function (r) {
     return '<button class="card" style="border:0;text-align:left;font:inherit;cursor:pointer" data-a="viewCabinet" data-v="' + r[0] + '"><span class="row sb"><span class="row">' + ic(r[3]) + '<b>' + r[1] + '</b></span>' + ic('next') + '</span><span class="cm">' + r[2] + '</span></button>';
   }).join('') + (online()?'':'<div class="card"><b>Как проходит подбор</b><p class="cm">Лид → запрос → склад, поставщики и рынок → сравнение → цена и подтверждение → текст или КП → обратная связь.</p><span class="cm">CRM сохраняет заявки и варианты на сервере. Ответы поставщиков и состояние подключённых источников видны в рабочей заявке в разделе «Поставщики и КП».</span></div>')+'</div>';
 }
@@ -1116,6 +1140,7 @@ function vSupplier() {
   if (S.supStep === 1 || S.supStep === 2) h += '<div class="bubble" style="background:var(--success-mid);align-self:flex-end">Есть вариант</div><div class="bubble" style="background:var(--card);align-self:flex-start">Пришлите цену, срок, пробег и фото. Можно голосом</div>';
   if (S.supStep === 1) h += '<button class="btn b-pri b-sm" style="width:100%" data-a="sup" data-v="2">Отправить пример ответа</button>';
   if (S.supStep === 2) h += '<div class="bubble" style="background:var(--success-mid);align-self:flex-end">Camry 2022 G, 29к, белая, оценка 4.5, ¥2 150 000. Пишите в WeChat lee_auto88</div><div class="bubble" style="background:var(--card);align-self:flex-start">Принято. Контакты не передаются, общение здесь</div>';
+  if(S.supStep===2&&(isAdmin()||['manager','owner'].includes(S.role)))h+='<button class="btn b-acc" data-a="exampleReview">Посмотреть ответ как менеджер</button>';
   if (S.supStep === 3) h += '<div class="bubble" style="background:var(--success-mid);align-self:flex-end">Нет</div><div class="bubble" style="background:var(--card);align-self:flex-start">Спасибо</div>';
   return h + '</div>';
 }
@@ -1163,7 +1188,8 @@ function vUser() {
 
 function vBoot() { return '<div class="auth" style="justify-content:center"><div class="wm">подбор</div><p class="auth-s">Проверяем доступ</p></div>'; }
 
-var VIEWS = {clientRecord:vClientRecord,callgroup:vCallGroup,demoCalls:vDemoCalls, desktopLogin: vDesktopLogin, offerArchive: vOfferArchive, savedOffer: vSavedOffer, request: vRequest, cabinets: vCabinets, boot: vBoot, noaccess: vNoAccess, access: vAccess, user: vUser,  login: vLogin, list: vList, lead: vLead, newreq: vNew, supcheck: vSupcheck, card: vCard, offer: vOffer, approve: vApprove, calls: vCalls, reply: vReply, client: vClient, status: vStatus, feedback: vFeedback, more: vMore, settings: vSettings, supplier: vSupplier };
+var miniWork=null;
+var VIEWS = {work:function(){return miniWork?miniWork.html():'<div class="scroll"></div>';}, clientRecord:vClientRecord,callgroup:vCallGroup,demoCalls:vDemoCalls, desktopLogin: vDesktopLogin, offerArchive: vOfferArchive, savedOffer: vSavedOffer, request: vRequest, cabinets: vCabinets, boot: vBoot, noaccess: vNoAccess, access: vAccess, user: vUser,  login: vLogin, list: vList, lead: vLead, newreq: vNew, supcheck: vSupcheck, card: vCard, offer: vOffer, approve: vApprove, calls: vCalls, reply: vReply, client: vClient, status: vStatus, feedback: vFeedback, more: vMore, settings: vSettings, supplier: vSupplier };
 
 /* ---------- рендер ---------- */
 function header(screen, hasBack) {
@@ -1174,10 +1200,11 @@ function header(screen, hasBack) {
   if (screen === 'desktopLogin') m = ['Вход на компьютере', 'CRM и команда'];
   if (screen === 'offerArchive') m = ['Версии КП', 'Сохранённые предложения'];
   if (screen === 'savedOffer') m = ['Коммерческое предложение', 'Сохранённая версия'];
+  if (screen === 'work') m=['Подбор по заявке',REQS.find(r=>r.crmId===S.workId)?.title||'Подбор по заявке'];
   if (screen === 'request') m = ['Запрос', 'Карточка клиента'];
   if (screen === 'cabinets') m = ['Кабинеты', ''];
   if (screen === 'supplier' && online() && S.me?.role === 'supplier') m = ['Кабинет поставщика', S.me.name];
-  if (screen === 'list') m = ['Запросы', owner ? 'Все менеджеры' : ''];
+  if (screen === 'list') m = ['Запросы', 'Кабинет '+(owner?'владельца':'менеджера')];
   if (screen === 'offer') m = [BY[S.sel].car, BY[S.sel].src];
   if (screen === 'card') m = ['Toyota Camry', 'Демонстрационный запрос'];
   if (screen === 'status') m = ['Статус клиента', S.cls[S.stKey].car];
@@ -1187,7 +1214,7 @@ function header(screen, hasBack) {
     : screen === 'list' ? '<button class="ib" aria-label="Поиск" data-a="soon">' + ic('search') + '</button>' : '<span class="sp"></span>';
   var right = screen === 'access' ? '<button class="ib dark" aria-label="Добавить пользователя" data-a="newUser">' + ic('plus') + '</button>'
     : screen === 'list' && !(online()&&S.me&&S.me.role!=='supplier') ? '<button class="ib dark" aria-label="Новая заявка" data-a="goLead">' + ic('plus') + '</button>'
-    : screen === 'supplier' ? '<button class="ib" aria-label="' + (isAdmin() ? 'Кабинеты' : 'Выйти') + '" data-a="' + (isAdmin() ? 'cabinets' : 'toLogin') + '">' + ic('out') + '</button>' : '<span class="sp"></span>';
+    : screen === 'supplier' && !hasBack ? '<button class="ib" aria-label="' + (isAdmin() ? 'Кабинеты' : 'Выйти') + '" data-a="' + (isAdmin() ? 'cabinets' : 'toLogin') + '">' + ic('out') + '</button>' : '<span class="sp"></span>';
   if (isAdmin() && screen !== 'cabinets' && screen !== 'user' && !hasBack) left = '<button class="ib" aria-label="Выбрать кабинет" data-a="cabinets">' + ic('car') + '</button>';
   return '<header class="top">' + left + '<div class="top-t"><h1>' + esc(m[0]) + '</h1>' + (m[1] ? '<p>' + esc(m[1]) + '</p>' : '') + '</div>' + right + '</header>';
 }
@@ -1209,7 +1236,7 @@ function render() {
   app.classList.toggle('wide', wide);
   var h = '';
   if (S.screen === 'login' || S.screen === 'noaccess' || S.screen === 'boot') h = VIEWS[S.screen]();
-  else if (S.screen === 'supplier') h = header('supplier', false) + vSupplier();
+  else if (S.screen === 'supplier') h = header('supplier', S.stack.length>0) + vSupplier();
   else if (wide) {
     h = '<div class="pane left">' + header('list', false) + vList() + tabsBar() + '</div><div class="pane right">';
     if (S.screen === 'list') h += '<div class="empty">' + ic('car', 'i-l') + '<b style="color:var(--foreground)">Откройте запрос слева</b></div>';
@@ -1226,7 +1253,7 @@ function render() {
   if (S.toast) h += '<div class="toast" role="status" aria-live="polite">' + ic('check', 'i-s') + '<span>' + esc(S.toast) + '</span></div>';
   app.innerHTML = (S.screen === 'login' || S.screen === 'noaccess' || S.screen === 'boot' ? '' : syncIndicator()) + h;
   app.querySelectorAll('.scroll').forEach(function (el) {
-    var identity=S.screen==='clientRecord'?S.clientKey:S.screen==='request'?S.requestKey:S.screen==='status'?S.stKey:S.screen==='callgroup'?S.callGroup:S.screen==='offer'?S.sel:'';
+    var identity=S.screen==='clientRecord'?S.clientKey:S.screen==='request'?S.requestKey:S.screen==='work'?S.workId:S.screen==='status'?S.stKey:S.screen==='callgroup'?S.callGroup:S.screen==='offer'?S.sel:'';
     var k=el.dataset.k==='list'?'list':(el.dataset.k||S.screen)+':'+(identity||'');el.dataset.scrollKey=k;
     el.scrollTop=keep[k]||0;
   });
@@ -1299,16 +1326,16 @@ var A = {
   openClient: function(key){S.clientKey=key;S.clientDetail=null;S.clientDetailKey='';go('clientRecord');return loadClientRecord(key)},
   reloadClient: function(){return loadClientRecord(S.clientKey)},
   contactResult: function(result){S.contactResult=result;render()},
-  back: function(){if(S.crmStatusBusy)return;if(S.contactMode&&S.screen==='status'){if(!window.confirm('Закрыть без сохранения результата звонка?'))return;S.contactMode=false}back()},
-  tab: function (v) { tab(v); if(v==='settings'&&online()&&!S.showExamples)return loadCompanySettings(); },
+  back: function(){if(S.screen==='work'){if(!miniWork?.leave())return;back();if(S.screen==='request')A.loadRealOptions(S.workId);return;}if(S.crmStatusBusy)return;if(S.contactMode&&S.screen==='status'){if(!window.confirm('Закрыть без сохранения результата звонка?'))return;S.contactMode=false}back()},
+  tab: function (v) { if(S.screen==='work'&&!miniWork?.leave())return;tab(v); if(v==='settings'&&online()&&!S.showExamples)return loadCompanySettings(); },
   companySettingsRefresh: loadCompanySettings,
   go: function (v) { go(v); },
-  cabinets: function () { if (isAdmin()) tab('cabinets'); },
+  cabinets: function () { if(S.screen==='work'&&!miniWork?.leave())return;if (isAdmin()){S.role='admin';tab('cabinets');} },
   examples: function (v) { S.showExamples = v === 'demo'; S.listFilter = 'all'; S.clFilter = 'all'; S.searchQuery = ''; render(); },
   viewCabinet: function (v) {
     if (!isAdmin() || !ROLES[v]) return;
     if (!online()) S.demoAdmin = true;
-    S.role = v; S.showExamples = false; S.stack = []; S.screen = homeOf(v); render();
+    S.role = v;if(v==='supplier')S.supStep=0;S.showExamples = false; S.stack = []; S.screen = v==='admin'?'access':homeOf(v); render();if(v==='admin'&&online())refreshUsers().then(render).catch(e=>say(errText(e)));
   },
   role: function (v) { set({ role: v, loginStep: 0 }); },
   forgot: function () { say('Ссылка для восстановления отправлена'); },
@@ -1317,6 +1344,11 @@ var A = {
   doLogin: function () { if (S.code.length < 6) { say('Введите 6 цифр, в демо подойдут любые'); return; } set({ screen: homeOf(S.role), stack: [], loginStep: 0, code: '' }); },
   sms: function () { say('Код отправлен по SMS'); },
   loginBack: function () { set({ loginStep: 0, code: '' }); },
+  exampleSupplier:function(){if(S.showExamples&&['manager','owner'].includes(S.role))go('supplier',{supStep:0});},
+  exampleReview:function(){if(S.supStep!==2||!(isAdmin()||['manager','owner'].includes(S.role)))return;
+    if(S.role==='supplier'&&isAdmin())S.role='manager';
+    set({screen:'reply',stack:['list','card'],showExamples:true,requestKey:'camry',sel:'p7',supArrived:Math.max(1,S.supArrived)});
+  },
   openSupplier: function () { set({ screen: 'supplier', stack: [], supStep: 0 }); },
   toLogin: function () { if (online()) return A.logoutAll(); S.me = null; S.demoAdmin = false; set({ screen: 'login', stack: [], loginStep: 0, code: '' }); },
   logoutAll: function () { if (online()) { if (TG.close) TG.close(); else say('Закройте приложение крестиком в Telegram'); return; } S.me = null; S.demoAdmin = false; set({ screen: 'login', stack: [], loginStep: 0, code: '' }); },
@@ -1435,7 +1467,7 @@ var A = {
     var cr = Object.assign({}, S.callRes); delete cr[id];
     set({ hist: h, callRes: cr, callIdx: S.callIdx - 1, mm: '' });
   },
-  confirmReply: function () { back(); say('П-07 добавлен в подбор'); },
+  confirmReply: function () { S.supArrived=Math.max(1,S.supArrived);S.fold.sup=false;back();A.jump('sup');say('Пример варианта добавлен в подбор'); },
   toast: function (v) { say(v); },
   openStatus: function (v, el) {
     S.contactMode=false;
@@ -1536,7 +1568,9 @@ app.addEventListener('submit',async function(event){
 });
 app.addEventListener('click',function(e){var link=e.target.closest('[data-customer-call]');if(!link)return;if(S.crmStatusBusy||link.getAttribute('aria-disabled')==='true'){e.preventDefault();return}var key=link.dataset.customerCall;if(!clientRequest(key)||!clientRequest(key).crmId){say('История звонков доступна в рабочих заявках CRM');return}var opening=S.screen==='clientRecord'&&S.clientKey===key?loadClientRecord(key):A.openClient(key);opening.then(function(){if(S.clientError||S.clientKey!==key||S.clientBusy||S.screen!=='clientRecord')return;scrollPositions['status:'+key]=0;A.openStatus(key);S.contactMode=true;S.contactToken=crypto.randomUUID();S.contactResult='';S.contactNote='';S.contactNext='';S.contactError='';render();});});
 app.addEventListener('change', function (e) { if (e.target.id === 'letterhead') uploadLetterhead(e.target.files && e.target.files[0]); });
+app.addEventListener('vehicle-picked',function(e){if(e.target.id==='fm'){S.fCatalogModel=e.target.value;S.fBrand=e.detail.make;if(document.getElementById('fbrand'))document.getElementById('fbrand').value=S.fBrand;}});
 app.addEventListener('input', function (e) {
+  if(e.target.id==='fm'&&S.fCatalogModel&&e.target.value!==S.fCatalogModel){S.fBrand='';S.fCatalogModel='';if(document.getElementById('fbrand'))document.getElementById('fbrand').value='';}
   var t = e.target, k = t.dataset.in;
   if (!k) return;
   if (k === 'login' || k === 'password') {
@@ -1635,25 +1669,35 @@ function uploadLetterhead(file) {
 
 function realOptionsHtml(requestId) {
   var current = S.realRequestId === requestId; var options = current ? (S.realOptions || []).filter(function (o) { return !o.archived; }) : [];
-  return '<div class="card"><div class="row sb"><b>Варианты из CRM</b><button class="btn b-sm" data-a="loadRealOptions" data-v="' + esc(requestId) + '">Обновить</button></div>' + (options.length ? options.map(function (o) {
+  var delivery=current&&S.realDelivery, key=crmKey(requestId), progress=delivery&&window.requestProgress(delivery,options,S.realOffers||[],S.cls[key]?.status);
+  var nextAction='<button class="btn b-acc" data-a="openWorkCrm" data-v="'+esc(requestId)+'">'+esc(progress?.action||'Открыть подбор')+'</button>';
+  var routeStep=progress&&!options.length&&!(S.realOffers||[]).length;
+  var routing='<div class="card"><b>Запрос поставщикам</b>'+(progress?'<div class="route-stage">'+esc(progress.title)+'</div>'+progress.rows.map(t=>'<div class="route-row"><span>'+esc(t.name)+'</span><small>'+esc(t.label)+'</small></div>').join('')+(!progress.rows.length&&!delivery.eligible?'<span class="cm">Нет подходящих поставщиков. Сообщите администратору марку и модель или добавьте найденную машину вручную.</span>':''):'<span class="cm">'+(S.realDeliveryError?'Не удалось проверить отправку. Обновите карточку.':'Проверяем отправку…')+'</span>')+(routeStep?nextAction:'')+'</div>';
+  return routing+'<div class="card"><div class="row sb"><b>Варианты для клиента</b><button class="btn b-sm" data-a="loadRealOptions" data-v="' + esc(requestId) + '">Обновить</button></div>' + (options.length ? options.map(function (o) {
     return '<div style="padding:12px 0;border-top:1px solid var(--border)"><b>' + esc(o.title) + '</b><div class="cm">Себестоимость ' + rub(o.total_cost) + '</div><div>Клиенту ' + rub(o.client_price) + '</div><span class="cm">' + (o.evaluation && o.evaluation.can_send ? 'Можно включать в КП' : 'Требуется согласование') + '</span></div>';
-  }).join('') : '<span class="cm">'+(S.realOptionsLoading?'Загружаем варианты…':current&&S.realOptionsError?'Не удалось загрузить варианты. Нажмите «Обновить».':current?'Вариантов пока нет. Добавьте их в CRM на компьютере.':'Обновите список вариантов.')+'</span>') + '<button class="btn b-acc" data-a="openWorkCrm" data-v="'+esc(requestId)+'">Поставщики и КП</button><button class="btn white" data-a="go" data-v="desktopLogin">Открыть CRM на компьютере</button></div>';
+  }).join('') : '<span class="cm">'+(S.realOptionsLoading?'Загружаем варианты…':current&&S.realOptionsError?'Не удалось загрузить варианты. Нажмите «Обновить».':current?'Сохранённых машин пока нет. Когда поставщик ответит, проверьте его предложение и сохраните вариант.':'Обновите список вариантов.')+'</span>') + (routeStep?'':nextAction)+'</div>';
 }
 A.openWorkCrm = async function(requestId) {
-  if(!online()||S.openingWorkCrm)return;
-  S.openingWorkCrm=true;
-  try {
-    var login=await call('desktop.code');
-    var session=await call('desktop.exchange',{code:login.code});
-    sessionStorage.setItem('podbor-desktop-session',JSON.stringify({token:session.sessionToken}));
-    location.assign('admin.html?request='+encodeURIComponent(requestId)+'&mini=1');
-  } catch(e){say(errText(e));} finally {S.openingWorkCrm=false;}
+  if(!online()||!requestId||S.me?.role==='supplier')return;
+  if(!miniWork)miniWork=window.createMiniWork({root:app,api:call,esc,render,flash:say,errorText:errText,
+    actor:()=>({...S.me,role:S.role}),merge:mergeCrmRequest,sent:()=>{tab('list');say('КП отмечено отправленным');loadCrmRequests().then(render);}
+  });
+  S.workId=requestId;
+  if(S.screen!=='work')go('work');
+  var d=S.realRequestId===requestId&&S.realDelivery;
+  var related=new URLSearchParams(location.search);
+  var preferred=related.get('request')===requestId&&related.get('thread')||d?.threads?.find(t=>t.replied)?.id;
+  await miniWork.open(requestId,preferred);
+  var section=S.workSection||(d&&window.requestProgress(d,S.realOptions?.filter(o=>!o.archived)||[],S.realOffers||[],S.cls[crmKey(requestId)]?.status).section);
+  S.workSection='';if(S.screen==='work'&&S.workId===requestId)miniWork.focusSection(section);
 };
+A.retryWork=function(){return A.openWorkCrm(S.workId);};
 A.loadRealOptions = function (requestId) {
   if (!online()) return;
   var ticket = S.realOptionsTicket = (S.realOptionsTicket || 0) + 1; if(S.realRequestId !== requestId) S.realOptions = [];
+  if(S.realRequestId!==requestId){S.realDelivery=null;S.realOffers=[];}S.realDeliveryError=false;
   S.realRequestId = requestId; S.realOptionsLoading = true; S.realOptionsError = false; render();
-  return call('backend.request.get', { request_id: requestId }).then(function (j) { if (S.screen !== 'request' || ticket !== S.realOptionsTicket) return; var r = REQS.filter(function (r) { return r.key === S.requestKey; })[0]; if (!r || r.crmId !== requestId) return; S.realRequestId = requestId; S.realOptions = j.options || []; }).catch(function (e) { if(S.realRequestId === requestId && ticket === S.realOptionsTicket){S.realOptionsError = true; say(errText(e));} }).then(function () { if(S.realRequestId === requestId && ticket === S.realOptionsTicket){S.realOptionsLoading = false; render();} });
+  var states=call('workflow.delivery',{request_id:requestId}).then(function(j){if(ticket===S.realOptionsTicket){S.realDelivery=j;S.realDeliveryError=false;}}).catch(function(){if(ticket===S.realOptionsTicket){S.realDelivery=null;S.realDeliveryError=true;}});return Promise.all([states,call('backend.request.get', { request_id: requestId }).then(function (j) { if (S.screen !== 'request' || ticket !== S.realOptionsTicket) return; var r = REQS.filter(function (r) { return r.key === S.requestKey; })[0]; if (!r || r.crmId !== requestId) return; S.realRequestId = requestId; S.realOptions = j.options || []; S.realOffers=j.offers||[]; }).catch(function (e) { if(S.realRequestId === requestId && ticket === S.realOptionsTicket){S.realOptionsError = true; say(errText(e));} })]).then(function () { if(S.realRequestId === requestId && ticket === S.realOptionsTicket){S.realOptionsLoading = false; render();} });
 };
 var openCrmRequest = A.openRequest;
 A.openRequest = function (key) { openCrmRequest(key); var r = REQS.filter(function (r) { return r.key === key; })[0]; if (r && r.crmId && online()) return A.loadRealOptions(r.crmId); };
@@ -1703,6 +1747,16 @@ A.copyDesktopCode = function () {
 };
 A.moreCrm = function () { if (S.crmBusy) return; S.crmBusy = true; render(); return loadCrmRequests(true).catch(function (e) { say(errText(e)); }).then(function () { S.crmBusy = false; render(); }); };
 A.refreshCrm = function () { if (S.crmBusy) return; S.crmBusy = true; render(); return loadCrmRequests().catch(function (e) { say(errText(e)); }).then(function () { S.crmBusy = false; render(); }); };
+// Refresh delivery receipts while this particular card is visible.
+var refreshingDelivery=false;
+if(window.setInterval)window.setInterval(async function(){
+  if(!online()||document.hidden||S.screen!=='request'||S.realOptionsLoading||refreshingDelivery)return;
+  var r=REQS.find(row=>row.key===S.requestKey);if(!r?.crmId)return;
+  refreshingDelivery=true;
+  try{var fresh=await call('workflow.delivery',{request_id:r.crmId});
+    if(S.screen==='request'&&S.requestKey===r.key&&!S.realOptionsLoading&&(S.realDeliveryError||JSON.stringify(S.realDelivery)!==JSON.stringify(fresh))){S.realDelivery=fresh;S.realDeliveryError=false;render();}
+  }catch{}finally{refreshingDelivery=false;}
+},15000);
 var originalLeadCreate = A.leadCreate;
 A.leadCreate = function () {
   if (!online()) return originalLeadCreate();
@@ -1719,9 +1773,9 @@ A.leadCreate = function () {
   S.createToken=S.createToken||crypto.randomUUID();
   return call('crm.save', { token:S.createToken,search:{brand:S.fBrand||'',color:S.fColor||'',trim:S.fTrim||''},data: { client_name: name, phone: phone, model: model, budget: Number(S.fBudget), generation: String(S.fGeneration || '').trim(), years: String(S.fYears || '').trim(), mileage: S.fMileage ? Number(S.fMileage) : null, spec: [S.fColor,S.fTrim].filter(Boolean).join(', '), source_text: S.leadMode==='quick'?S.leadText:'', city: S.fCity || '', purchase_time: S.fWhen || '', payment: S.pay, legal: S.legal, consent_at: new Date().toISOString() } }).then(function (j) {
     S.createToken=null;S.fCity='';S.fWhen='';S.pay='';S.legal='';S.anketa=false;S.leadDetails=false;S.leadMode='form';S.fColor='';S.fTrim='';S.fBrand='';S.fGeneration='';S.fYears='';S.fMileage='';S.leadText='';
-    var key = mergeCrmRequest(j.request); S.crmTotal = (S.crmTotal || 0) + 1;
+    S.fCatalogModel='';var key = mergeCrmRequest(j.request); S.crmTotal = (S.crmTotal || 0) + 1;
     S.fName = ''; S.fPhone = ''; S.fModel = ''; S.fBudget = ''; S.fConsent = false;
-    go('request', { requestKey: key }); say('Заявка сохранена. Запросов в очереди: '+(j.queued||0));
+    go('request', { requestKey: key }); say(j.queued?'Заявка сохранена. В очереди на отправку: '+j.queued:'Заявка сохранена без рассылки');return A.loadRealOptions(j.request.id);
   }).catch(function (e) { say(errText(e)); }).then(function () { S.creatingLead = false; render(); });
 };
 var originalStatusSave = A.stSave;
@@ -1847,6 +1901,7 @@ A.loadServerState = function () {
   workspaceConflict = false; workspaceLastError = '';
   return call('workspace.get').then(function (j) { applyWorkspace(j.state); workspaceRevision = j.revision; workspaceSaved = JSON.stringify(snapshotWorkspace()); cacheWorkspace(snapshotWorkspace(), false); workspaceStatus = 'saved'; return loadCrmRequests().then(render); }).catch(function (e) { workspaceStatus = 'error'; workspaceLastError = errText(e); updateSyncIndicator(); });
 };
+window.addEventListener('focus', function () {if(online()&&S.screen==='request'&&!S.realOptionsLoading){var r=REQS.find(r=>r.key===S.requestKey);if(r?.crmId)A.loadRealOptions(r.crmId);}});
 window.addEventListener('pagehide', function () { if (workspaceReady && online()) cacheWorkspace(snapshotWorkspace(), JSON.stringify(snapshotWorkspace()) !== workspaceSaved); });
 
 if (!online()) restoreDemoSettings();

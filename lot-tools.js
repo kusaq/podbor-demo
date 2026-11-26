@@ -91,11 +91,11 @@ window.PodborLotTools=(()=>{
   return out;
  }
  function ranges(f){return ['price','year','mileage'].every(k=>f[k+'_from']==null||f[k+'_to']==null||f[k+'_from']<=f[k+'_to']);}
- async function route(api,q,creating){
+ async function route(api,q,creating,role){
   const answer=await api('workflow.recipients',{brand:q.brand,model:q.model,...(q.request_id?{request_id:q.request_id}:{})});
   const list=answer.recipients||[],dlg=document.createElement('dialog');dlg.className='route-dialog';
   dlg.innerHTML='<form><h2>Получатели запроса</h2><p>Марка · '+esc(answer.brand||'не указана')+'</p>'+
-   (list.length?'<fieldset class="route-people"><legend>Кому отправить</legend>'+list.map(r=>'<label><input name="recipient" type="checkbox" checked value="'+esc(r.key)+'"> '+esc(r.name)+'</label>').join('')+'</fieldset>':'<p>Для этой марки новых получателей нет. Проверьте марки и доступ в разделе «Поставщики».</p>')+
+   (list.length?'<fieldset class="route-people"><legend>Кому отправить</legend>'+list.map(r=>'<label><input name="recipient" type="checkbox" checked value="'+esc(r.key)+'"> '+esc(r.name)+'</label>').join('')+'</fieldset>':(answer.already_contacted?'<p role="status">По всем подходящим поставщикам уже создана рассылка. Переписка доступна в заявке.</p>':'<p class="route-warning" role="status"><strong>Нет поставщика для этой машины</strong><br>'+(['admin','owner'].includes(role)?'Добавьте поставщика или измените его специализацию в разделе «Поставщики».':'Сообщите администратору, какая марка и модель нужны.')+' Заявку можно сохранить и продолжить подбор вручную.</p>'))+
    '<details><summary>Фильтры подбора</summary><div class="lot-filter-fields">'+inputs(q.filters)+'</div></details><div role="alert"></div><footer><button class="btn" type="button" data-cancel>Отмена</button><button class="btn primary" type="submit"></button></footer></form>';
   document.body.append(dlg);const form=dlg.querySelector('form');
   const label=()=>{const n=form.querySelectorAll('[name=recipient]:checked').length;form.querySelector('[type=submit]').textContent=(creating?'Создать заявку':'Сохранить параметры')+(n?' и отправить · '+n:' без рассылки');};label();form.onchange=label;

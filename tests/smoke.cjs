@@ -8,7 +8,7 @@ const ctx={console,URLSearchParams,location:{search:''},document:{getElementById
 ctx.window={addEventListener(){},innerWidth:390,matchMedia:ctx.matchMedia};
 vm.createContext(ctx);vm.runInContext(code,ctx);
 const {S,A,VIEWS,render,priceState,pr}=ctx.test;
-S.me={id:'337455479',name:'Админ',role:'admin'}; S.role='admin'; S.screen=ctx.test.homeOf('admin');render();assert(app.innerHTML.includes('Рабочие кабинеты'));
+S.me={id:'337455479',name:'Админ',role:'admin'}; S.role='admin'; S.screen=ctx.test.homeOf('admin');render();assert(app.innerHTML.includes('Ваш доступ · Администратор'));
 for(const role of ['manager','owner','supplier','admin']){A.viewCabinet(role);assert.equal(S.role,role);assert.equal(S.me.role,'admin');assert(app.innerHTML.includes('data-a="cabinets"')||role==='admin');A.cabinets();assert.equal(S.screen,'cabinets');}
 S.demoAdmin=false;S.me={id:'1',role:'manager'};S.role='manager';A.viewCabinet('owner');assert.equal(S.role,'manager');
 S.me={id:'1',role:'admin'}; S.role='owner';

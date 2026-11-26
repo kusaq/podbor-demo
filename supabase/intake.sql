@@ -23,9 +23,9 @@ begin
  elsif p_action in ('save','toggle','page') then
   if p_action='save' then
    f:=p->'fields';brand:=workflow_route_brand(f->>'brand',f->>'model');
-   select coalesce(jsonb_agg(jsonb_build_object('key',w.key,'name',w.name) order by w.name,w.key),'[]') into choices from workflow_routes(a.company_id,brand) w;
+   select coalesce(jsonb_agg(jsonb_build_object('key',w.key,'name',w.name) order by w.name,w.key),'[]') into choices from workflow_model_routes(a.company_id,brand,f->>'model') w;
    select coalesce(jsonb_agg(value->>'key'),'[]') into keys from jsonb_array_elements(choices);
-   selected:=case when not coalesce((p->>'fresh')::boolean,false) and d.routing->>'brand'=brand then
+   selected:=case when not coalesce((p->>'fresh')::boolean,false) and d.routing->>'brand'=brand and lower(trim(d.fields->>'model'))=lower(trim(f->>'model')) then
     (select coalesce(jsonb_agg(value),'[]') from jsonb_array_elements_text(keys) where d.routing->'selected' ? value) else keys end;
    route:=jsonb_build_object('brand',brand,'choices',choices,'selected',selected,'preview',p->>'preview','page',0);
   else
@@ -50,7 +50,7 @@ begin
     jsonb_build_array(jsonb_build_object('text','Отменить черновик','callback_data','leadno:'||rev)))));
   if (p->>'ready')::boolean then
    msg:=msg||E'\n\nПолучатели по марке: '||jsonb_array_length(selected)||' из '||jsonb_array_length(choices)||
-    case when jsonb_array_length(choices)>0 then '. Снимите отметку с тех, кому писать не нужно.' else '. Заявку можно создать без рассылки.' end;
+    case when jsonb_array_length(choices)>0 then '. Снимите отметку с тех, кому писать не нужно.' else '. Подходящих поставщиков нет. Сообщите администратору. Заявку можно создать без рассылки.' end;
    buttons:='[]'::jsonb;pg:=(route->>'page')::integer;
    for rec in select value as item,(ord-1)::integer as i from jsonb_array_elements(choices) with ordinality as x(value,ord) where ord between pg*6+1 and pg*6+6 loop
     buttons:=buttons||jsonb_build_array(jsonb_build_array(jsonb_build_object('text',(case when selected ? (rec.item->>'key') then '✓ ' else '○ ' end)||left(rec.item->>'name',48),'callback_data','leadpick:'||rev||':'||rec.i)));

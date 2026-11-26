@@ -13,6 +13,8 @@ declare lead jsonb:='{"model":"Fixturebrand Camry","client_name":"Private Client
  draft jsonb:='{"title":"Camry 2022","scenario":"import","currency":"JPY","input":{"purchase":1000000,"base_rate":0.5,"logistics":50000,"commission":10000,"duty":200000,"recycling":100000,"documents":5000},"client_price":1050000,"market_median":1050000,"term":"45 дней"}';
  a jsonb; msg uuid; oid uuid; img uuid; img2 uuid; rid uuid; th uuid; other uuid; offer jsonb; token uuid:=gen_random_uuid(); source jsonb; external text; photo uuid; result jsonb;
 begin
+ perform crm_workflow(81102,'catalog.add','{"country":"Швеция","make":"Fixture","model":"Local only"}');
+ if jsonb_array_length(crm_workflow(81101,'catalog','{}')->'models')<>1 or jsonb_array_length(crm_workflow(81103,'catalog','{}')->'models')<>0 then raise exception 'Dealer catalog scope';end if;
  perform crm_workflow(81102,'terms.save',tariff);
  perform crm_workflow(81103,'terms.save',tariff||'{"id":"81105"}');
  perform crm_workflow(81102,'terms.save',tariff||'{"id":"81106","brands":["Kia"]}');
@@ -27,6 +29,11 @@ begin
  if exists(select 1 from bot_outbox b join bot_threads t on t.id=b.thread_id where t.request_id=rid and (b.body::text like '%Private Client%' or b.body::text like '%9991234567%' or b.body::text like '%3000000%'))then raise exception 'private data forwarded';end if;
  select id into th from bot_threads where request_id=rid and supplier_id=81104;
  select id into other from bot_threads where request_id=rid and supplier_id=81105;
+ if (crm_workflow(81101,'delivery',jsonb_build_object('request_id',rid))->'threads'->0->>'state')<>'pending' then raise exception 'Queue state must be visible to manager';end if;
+ update bot_supplier_profiles set model_rules='{"fixturebrand":["Corolla"]}' where user_id=81104;
+ if workflow_delivery_route(th) then raise exception 'Queue must recheck current model rules';end if;
+ update bot_supplier_profiles set model_rules='{"fixturebrand":["Camry"]}' where user_id=81104;
+ if not workflow_delivery_route(th) then raise exception 'Selected model must match full request title';end if;
  update bot_outbox set state='sent' where thread_id in(th,other);
  update bot_outbox set delivered_at=now()-interval '7 hours' where thread_id in(th,other);
  perform workflow_queue_due();perform workflow_queue_due();
