@@ -65,7 +65,7 @@ begin
  elsif p_action='confirm' and d.ready then
   f:=d.fields;
   result:=workflow_create(p_actor,d.revision,(f-'brand'-'trim'-'color')||jsonb_build_object('consent_at',now(),'source_text',d.source_text,
-   'spec',concat_ws(E'\n','Цвет: '||nullif(f->>'color',''),'Комплектация: '||nullif(f->>'trim',''))),jsonb_build_object('brand',f->>'brand','color',f->>'color','trim',f->>'trim','filters',coalesce(f->'filters','{}'))||case when d.routing?'selected' then jsonb_build_object('recipients',d.routing->'selected') else '{}'::jsonb end);
+   'spec',concat_ws(E'\n',nullif(f->>'spec',''),'Цвет: '||nullif(f->>'color',''),'Комплектация: '||nullif(f->>'trim',''))),jsonb_build_object('brand',f->>'brand','color',f->>'color','trim',f->>'trim','filters',coalesce(f->'filters','{}'))||case when d.routing?'selected' then jsonb_build_object('recipients',d.routing->'selected') else '{}'::jsonb end);
   rid:=(result->'request'->>'id')::uuid;
   insert into bot_context(user_id,company_id,request_id,thread_id,offer_id,dialogue) values(p_actor,a.company_id,rid,null,null,'[]')
    on conflict(user_id) do update set company_id=excluded.company_id,request_id=excluded.request_id,thread_id=null,offer_id=null,dialogue='[]';

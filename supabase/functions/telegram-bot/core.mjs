@@ -14,15 +14,22 @@ export class BotEngine{
   if(u.callback_query){const data=String(u.callback_query.data||'');
    if(data==='nav:home'){await this.p.help(actor);return;}
    if(data==='nav:new'&&actor.role!=='supplier'){await this.p.intakeMessage(actor,{text:'/new'},job.id,true);return;}
+   const review=data.match(/^rd(yes|no|edit):(.+)$/);
+   if(review){if(UUID.test(review[2]))await this.p.readDecision(actor,job.id,review[2],review[1]);return;}
    const list=data.match(/^nav:(requests|threads):(\d{1,5})$/);
    if(list){if(list[1]==='threads'||actor.role==='supplier')await this.p.threads(actor,Number(list[2]));else await this.p.requests(actor,Number(list[2]));return;}
    if(/^(leadpick|leadpage):/.test(data)){const [act,id,index]=data.split(':');if(UUID.test(id)&&/^\d{1,6}$/.test(index)&&actor.role!=='supplier')await this.p.intakeRoute(actor,job.id,id,act==='leadpick'?'toggle':'page',Number(index));return;}if(/^(leadok|leadno):/.test(data)){const [action,id]=data.split(':');if(UUID.test(id)&&actor.role!=='supplier')await this.p.intakeDecision(actor,job.id,id,action==='leadok');return;}if(/^(confirm|cancel):/.test(data)){const [action,id]=data.split(':');if(!UUID.test(id))return;await this.p.decide(actor,id,action==='confirm');return;}if(data.startsWith('addpic:')){const id=data.slice(7);if(UUID.test(id)&&actor.role==='supplier')await this.p.attachPhotos(actor,id);return;}if(data.startsWith('review:')){const id=data.slice(7);if(UUID.test(id)&&actor.role!=='supplier')await this.p.reviewSupplier(actor,id);return;}if(data.startsWith('request:')){const id=data.slice(8);if(!UUID.test(id))return;await this.p.selectRequest(actor,id);return;}if(data.startsWith('thread:')){const id=data.slice(7);if(!UUID.test(id))return;await this.p.selectThread(actor,id);return;}return;}
   const m=u.message;if(!m)return;const original=m.text||m.caption||'';if(/^\/(start|help)(?:@\w+)?$/.test(original.trim())){await this.p.help(actor);return;}
   if(/^\/requests(?:@\w+)?$/.test(original.trim())){await this.p.requests(actor);return;}
   if(/^\/threads(?:@\w+)?$/.test(original.trim())){await this.p.threads(actor);return;}
+  if(m.voice&&(!m.voice.file_id||!Number.isInteger(m.voice.duration)||m.voice.duration<1||m.voice.duration>120||m.voice.file_size>8388608)){
+   await this.p.notice(actor,'Пришлите голосовое до двух минут или напишите текстом.');return;
+  }
+  if(actor.role!=='supplier'&&this.p.readMessage&&(m.text||m.caption||m.voice)&&await this.p.readMessage(actor,m,job.id))return;
   if(m.voice&&actor.role!=='supplier'){await this.p.notice(actor,'Для команды менеджера пришлите сообщение текстом.');return;}
   if(actor.role!=='supplier'&&m.text&&this.p.intakeMessage&&await this.p.intakeMessage(actor,m,job.id))return;
   if(actor.role==='supplier'&&!await this.p.hasThread(actor,m.reply_to_message?.message_id,m.media_group_id)){await this.p.threads(actor);return;}
+  if(actor.role==='supplier'&&this.p.readMessage&&(original.trim()||m.voice)&&await this.p.readMessage(actor,m,job.id))return;
   if(actor.role!=='supplier'&&m.reply_to_message)await this.p.hasThread(actor,m.reply_to_message.message_id);
   if(m.voice){
    if(!m.voice.file_id||!Number.isInteger(m.voice.duration)||m.voice.duration<1||m.voice.duration>120||m.voice.file_size>8388608){
@@ -47,6 +54,7 @@ export class BotEngine{
   if(actor.role==='supplier')return;
   const intent=validateIntent(await this.p.understand(text,actor));
   if(intent.action==='unknown'){await this.p.notice(actor,intent.question||'Уточните действие: создать заявку, обновить, написать поставщику или собрать КП.');return;}
+  if(intent.action==='create_request'&&this.p.readMessage&&await this.p.readMessage(actor,m,job.id,true))return;
   await this.p.propose(actor,intent,text,job.id);
  }
 }
